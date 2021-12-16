@@ -1,4 +1,5 @@
 rom/
 notes/
 disassembler/main
+emulator/main
 *.out
