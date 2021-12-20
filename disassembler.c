@@ -1,6 +1,7 @@
+#include "disassembler.h"
+
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 enum argtype { argtype_none, argtype_d8, argtype_d16, argtype_addr };
 
@@ -318,18 +319,4 @@ size_t dissassemble(FILE* restrict in, FILE* restrict out) {
         }
 
         return 1;
-}
-
-int main(void) {
-        FILE* in = freopen(0, "rb", stdin);
-        if (!in) {
-                fprintf(stderr, "Failed to open stdin in binary mode\n");
-                return EXIT_FAILURE;
-        }
-
-        if (!dissassemble(in, stdout)) {
-                return EXIT_FAILURE;
-        }
-
-        return EXIT_SUCCESS;
 }
