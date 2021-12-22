@@ -10,11 +10,14 @@ cpu.o: cpu.c
 disassembler.o: disassembler.c
 	$(CC) $(CFLAGS) -c disassembler.c -o disassembler.o
 
-main: main.c cpu.o disassembler.o
-	$(CC) $(CFLAGS) -o main main.c cpu.o disassembler.o $(LIBS)
+ports.o: ports.c
+	$(CC) $(CFLAGS) -c ports.c -o ports.o
+
+main: main.c cpu.o disassembler.o ports.o
+	$(CC) $(CFLAGS) -o main main.c cpu.o disassembler.o ports.o $(LIBS)
 
 clean:
-	rm main cpu.o disassembler.o
+	rm main *.o
 
 run: main
 	./main rom/invaders

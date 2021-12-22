@@ -6,6 +6,7 @@
 
 #include "cpu.h"
 #include "disassembler.h"
+#include "ports.h"
 
 #define CPU_MEM 16384
 
@@ -14,7 +15,11 @@
 
 #define FONT_FILE "fonts/arkitech/Arkitech Medium.ttf"
 
+int quit = 0;
+int running = 0;
+
 cpu* state = 0;
+ports* pts = 0;
 
 SDL_Window* window = 0;
 SDL_Renderer* renderer = 0;
@@ -24,6 +29,7 @@ SDL_Color const color_debugInfoCurrent = {.r = 125, .g = 255, .b = 125};
 SDL_Color const color_grid = {.r = 128, .g = 128, .b = 128};
 
 void cleanup() {
+        ports_delete(pts);
         cpu_delete(state);
         if (renderer) {
                 SDL_DestroyRenderer(renderer);
@@ -101,7 +107,8 @@ SDL_ERROR:
         goto DONE;
 }
 
-void render_debugInfo(SDL_Renderer* renderer, cpu const* state) {
+void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
+                      ports const* pts) {
         char buf[128] = "";
         char buf2[128] = "";
         int x = 0;
@@ -198,6 +205,185 @@ void render_debugInfo(SDL_Renderer* renderer, cpu const* state) {
         sprintf(buf, "Interrupts: %d", state->int_enable);
         render_text(renderer, buf, ptsize, color_debugInfo, x, y);
         y += 20;
+
+        y += 20;
+
+        render_text(renderer, "Ports:", ptsize, color_debugInfo, x, y);
+        y += 20;
+
+        sprintf(buf, "Shift: %04x", pts->shift);
+        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        y += 20;
+
+        sprintf(buf, "Inp1: %04x", pts->inp1.value);
+        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        y += 20;
+
+        sprintf(buf, "Inp2: %04x", pts->inp2.value);
+        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        y += 20;
+}
+
+void tick(cpu* state, ports* pts) {
+        uint8_t opcode = state->memory[state->pc];
+        switch (opcode) {
+                case 0xdb:  // IN
+                {
+                        uint8_t port = state->memory[state->pc + 1];
+                        state->a = ports_in(pts, port);
+                        state->pc++;
+                        break;
+                }
+                case 0xd3:  // OUT
+                {
+                        uint8_t port = state->memory[state->pc + 1];
+                        ports_out(pts, port, state->a);
+                        state->pc++;
+                        break;
+                }
+                default: {
+                        cpu_emulateOp(state);
+                        break;
+                }
+        }
+}
+
+void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
+        switch (key.keysym.sym) {
+                case SDLK_0: {
+                        if (!running) {
+                                tick(state, pts);
+                        }
+                        break;
+                }
+                case SDLK_9: {
+                        running = !running;
+                        break;
+                }
+                case SDLK_RETURN: {
+                        pts->inp1.bits.credit = 1;
+                        break;
+                }
+                case SDLK_2: {
+                        pts->inp1.bits.p2_start = 1;
+                        break;
+                }
+                case SDLK_1: {
+                        pts->inp1.bits.p1_start = 1;
+                        break;
+                }
+                case SDLK_SPACE: {
+                        pts->inp1.bits.p1_shot = 1;
+                        break;
+                }
+                case SDLK_LEFT: {
+                        pts->inp1.bits.p1_left = 1;
+                        break;
+                }
+                case SDLK_RIGHT: {
+                        pts->inp1.bits.p1_right = 1;
+                        break;
+                }
+                case SDLK_3: {
+                        pts->inp2.bits.dip3 = 1;
+                        break;
+                }
+                case SDLK_5: {
+                        pts->inp2.bits.dip5 = 1;
+                        break;
+                }
+                case SDLK_TAB: {
+                        pts->inp2.bits.tilt = 1;
+                        break;
+                }
+                case SDLK_6: {
+                        pts->inp2.bits.dip6 = 1;
+                        break;
+                }
+                case SDLK_p: {
+                        pts->inp2.bits.p2_shot = 1;
+                        break;
+                }
+                case SDLK_a: {
+                        pts->inp2.bits.p2_left = 1;
+                        break;
+                }
+                case SDLK_d: {
+                        pts->inp2.bits.p2_right = 1;
+                        break;
+                }
+                case SDLK_7: {
+                        pts->inp2.bits.dip7 = 1;
+                        break;
+                }
+                default: {
+                        break;
+                }
+        }
+}
+
+void keyup(SDL_KeyboardEvent key, ports* pts) {
+        switch (key.keysym.sym) {
+                case SDLK_RETURN: {
+                        pts->inp1.bits.credit = 0;
+                        break;
+                }
+                case SDLK_2: {
+                        pts->inp1.bits.p2_start = 0;
+                        break;
+                }
+                case SDLK_1: {
+                        pts->inp1.bits.p1_start = 0;
+                        break;
+                }
+                case SDLK_SPACE: {
+                        pts->inp1.bits.p1_shot = 0;
+                        break;
+                }
+                case SDLK_LEFT: {
+                        pts->inp1.bits.p1_left = 0;
+                        break;
+                }
+                case SDLK_RIGHT: {
+                        pts->inp1.bits.p1_right = 0;
+                        break;
+                }
+                case SDLK_3: {
+                        pts->inp2.bits.dip3 = 0;
+                        break;
+                }
+                case SDLK_5: {
+                        pts->inp2.bits.dip5 = 0;
+                        break;
+                }
+                case SDLK_TAB: {
+                        pts->inp2.bits.tilt = 0;
+                        break;
+                }
+                case SDLK_6: {
+                        pts->inp2.bits.dip6 = 0;
+                        break;
+                }
+                case SDLK_p: {
+                        pts->inp2.bits.p2_shot = 0;
+                        break;
+                }
+                case SDLK_a: {
+                        pts->inp2.bits.p2_left = 0;
+                        break;
+                }
+                case SDLK_d: {
+                        pts->inp2.bits.p2_right = 0;
+                        break;
+                }
+                case SDLK_7: {
+                        pts->inp2.bits.dip7 = 0;
+                        break;
+                }
+                default: {
+                        break;
+                }
+        }
 }
 
 int main(int argc, char* argv[static argc + 1]) {
@@ -224,6 +410,8 @@ int main(int argc, char* argv[static argc + 1]) {
         fread(state->memory, fsize, 1, f);
         fclose(f);
 
+        pts = ports_new();
+
         init();
         atexit(cleanup);
 
@@ -244,8 +432,6 @@ int main(int argc, char* argv[static argc + 1]) {
         }
 
         SDL_Event e = {0};
-        int quit = 0;
-        int running = 0;
         while (!quit) {
                 while (SDL_PollEvent(&e)) {
                         switch (e.type) {
@@ -254,22 +440,12 @@ int main(int argc, char* argv[static argc + 1]) {
                                         break;
                                 }
                                 case SDL_KEYDOWN: {
-                                        switch (e.key.keysym.sym) {
-                                                case SDLK_SPACE: {
-                                                        if (running) {
-                                                                break;
-                                                        }
-                                                        cpu_emulateOp(state);
-                                                        break;
-                                                }
-                                                case SDLK_DOWN: {
-                                                        running = !running;
-                                                        break;
-                                                }
-                                                default: {
-                                                        break;
-                                                }
-                                        }
+                                        keydown(e.key, state, pts);
+                                        break;
+                                }
+                                case SDL_KEYUP: {
+                                        keyup(e.key, pts);
+                                        break;
                                 }
                                 default: {
                                         break;
@@ -279,11 +455,11 @@ int main(int argc, char* argv[static argc + 1]) {
 
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                 SDL_RenderClear(renderer);
-                render_debugInfo(renderer, state);
+                render_debugInfo(renderer, state, pts);
                 SDL_RenderPresent(renderer);
 
                 if (running) {
-                        cpu_emulateOp(state);
+                        tick(state, pts);
                 }
         }
 
