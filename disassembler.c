@@ -269,54 +269,33 @@ Opcode opcodes[256] = {
     [0xff] = {.instruction = "RST 7"},
 };
 
-size_t dissassemble(FILE* restrict in, FILE* restrict out) {
-        uint16_t pc = 0;
-        for (int op = fgetc(in); op != EOF; op = fgetc(in)) {
-                Opcode opcode = opcodes[op];
-                if (!opcode.instruction) {
-                        fprintf(stderr, "Unknown opcode: %02x\n", op);
-                        return 0;
-                }
-                if (opcode.arg == argtype_none) {
-                        fprintf(out, "%04x %02x\t\t%s", pc, op,
-                                opcode.instruction);
-                }
-                if (opcode.arg == argtype_d8) {
-                        int a = fgetc(in);
-                        if (a == EOF) {
-                                fprintf(stderr, "Unexpected EOF\n");
-                                return 0;
-                        }
-                        fprintf(out, "%04x %02x %02x\t%s #$%02x", pc, op, a,
-                                opcode.instruction, a);
-                        pc++;
-                }
-                if (opcode.arg == argtype_d16) {
-                        int a = fgetc(in);
-                        int b = fgetc(in);
-                        if (b == EOF) {
-                                fprintf(stderr, "Unexpected EOF\n");
-                                return 0;
-                        }
-                        fprintf(out, "%04x %02x %02x %02x\t%s #$%02x%02x", pc,
-                                op, a, b, opcode.instruction, b, a);
-                        pc += 2;
-                }
-                if (opcode.arg == argtype_addr) {
-                        int a = fgetc(in);
-                        int b = fgetc(in);
-                        if (b == EOF) {
-                                fprintf(stderr, "Unexpected EOF\n");
-                                return 0;
-                        }
-                        fprintf(out, "%04x %02x %02x %02x\t%s $%02x%02x", pc,
-                                op, a, b, opcode.instruction, b, a);
-                        pc += 2;
-                }
-                fprintf(out, "\n");
-
-                pc++;
+int dissassembleOp(uint8_t pc, uint8_t* memory, char* s) {
+        if (!s || !memory) {
+                return -1;
         }
 
-        return 1;
+        uint8_t op = memory[pc];
+        Opcode opcode = opcodes[op];
+        if (!opcode.instruction) {
+                return -1;
+        }
+        if (opcode.arg == argtype_none) {
+                sprintf(s, "%02x %s", op, opcode.instruction);
+        }
+        if (opcode.arg == argtype_d8) {
+                int a = memory[pc + 1];
+                sprintf(s, "%02x %s #$%02x", op, opcode.instruction, a);
+        }
+        if (opcode.arg == argtype_d16) {
+                int a = memory[pc + 1];
+                int b = memory[pc + 2];
+                sprintf(s, "%02x %s #$%02x%02x", op, opcode.instruction, b, a);
+        }
+        if (opcode.arg == argtype_addr) {
+                int a = memory[pc + 1];
+                int b = memory[pc + 2];
+                sprintf(s, "%02x %s $%02x%02x", op, opcode.instruction, b, a);
+        }
+
+        return 0;
 }

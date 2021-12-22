@@ -19,6 +19,14 @@ cpu* cpu_new(int memsize) {
         return state;
 }
 
+void cpu_delete(cpu* state) {
+        if (!state) {
+                return;
+        }
+        free(state->memory);
+        free(state);
+}
+
 void unimplementedInstruction(uint8_t opcode) {
         fprintf(stderr, "Error: Unimplemnted instruction: 0x%02x\n", opcode);
         exit(1);

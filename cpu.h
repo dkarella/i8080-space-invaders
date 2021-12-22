@@ -30,6 +30,7 @@ typedef struct cpu {
 } cpu;
 
 cpu* cpu_new(int memsize);
+void cpu_delete(cpu* state);
 void cpu_emulateOp(cpu* state);
 
 #endif
