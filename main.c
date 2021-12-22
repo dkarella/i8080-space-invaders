@@ -132,9 +132,9 @@ void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
         render_text(renderer, buf, ptsize, color_debugInfo, x, y);
         y += 20;
 
-        err = dissassembleOp(state->pc, state->memory, buf2);
+        err = disassembleOp(state->pc, state->memory, buf2);
         if (err) {
-                fprintf(stderr, "render_debugInfo: dissassembleOp error\n");
+                fprintf(stderr, "render_debugInfo: disassembleOp error\n");
                 exit(EXIT_FAILURE);
         }
         sprintf(buf, "Op: %s", buf2);

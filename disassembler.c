@@ -269,7 +269,7 @@ Opcode opcodes[256] = {
     [0xff] = {.instruction = "RST 7"},
 };
 
-int dissassembleOp(uint8_t pc, uint8_t* memory, char* s) {
+int disassembleOp(uint8_t pc, uint8_t* memory, char* s) {
         if (!s || !memory) {
                 return -1;
         }
