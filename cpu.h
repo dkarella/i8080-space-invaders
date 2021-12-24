@@ -2,6 +2,7 @@
 #define CPU_H
 
 #include <stdint.h>
+#include <stdlib.h>
 
 typedef struct cpu_conditionCodes {
         // NOTE: these are "bit fields"
@@ -29,8 +30,10 @@ typedef struct cpu {
         uint8_t int_enable;
 } cpu;
 
-cpu* cpu_new(int memsize);
+cpu* cpu_new(size_t memsize);
 void cpu_delete(cpu* state);
-void cpu_emulateOp(cpu* state);
+uint8_t cpu_emulateOp(cpu* state);
+void cpu_interrupt(cpu* state, uint8_t interrupt_num);
+uint8_t cpu_read(cpu* state, uint16_t addr);
 
 #endif

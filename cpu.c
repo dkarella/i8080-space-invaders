@@ -4,14 +4,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-cpu* cpu_new(int memsize) {
+uint8_t op_cycles[] = {
+    4,  10, 7,  5,  5,  5,  7,  4,  4,  10, 7,  5,  5,  5,  7, 4,
+    4,  10, 7,  5,  5,  5,  7,  4,  4,  10, 7,  5,  5,  5,  7, 4,
+    4,  10, 16, 5,  5,  5,  7,  4,  4,  10, 16, 5,  5,  5,  7, 4,
+    4,  10, 13, 5,  10, 10, 10, 4,  4,  10, 13, 5,  5,  5,  7, 4,
+
+    5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7, 5,
+    5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7, 5,
+    5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7, 5,
+    7,  7,  7,  7,  7,  7,  7,  7,  5,  5,  5,  5,  5,  5,  7, 5,
+
+    4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7, 4,
+    4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7, 4,
+    4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7, 4,
+    4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7, 4,
+
+    11, 10, 10, 10, 17, 11, 7,  11, 11, 10, 10, 10, 10, 17, 7, 11,
+    11, 10, 10, 10, 17, 11, 7,  11, 11, 10, 10, 10, 10, 17, 7, 11,
+    11, 10, 10, 18, 17, 11, 7,  11, 11, 5,  10, 5,  17, 17, 7, 11,
+    11, 10, 10, 4,  17, 11, 7,  11, 11, 5,  10, 4,  17, 17, 7, 11,
+};
+
+cpu* cpu_new(size_t memsize) {
         cpu* state = malloc(sizeof(cpu));
         if (!state) {
                 return 0;
         }
 
         *state = (cpu){0};
-        state->memory = malloc(memsize);
+        state->memory = calloc(memsize, sizeof(uint8_t));
         if (!state->memory) {
                 return 0;
         }
@@ -27,16 +49,45 @@ void cpu_delete(cpu* state) {
         free(state);
 }
 
+void cpu_write(cpu* state, uint16_t addr, uint8_t data) {
+        if (addr < 0x2000) {
+#ifndef CPUDIAG
+                fprintf(stderr, "tried to write to ROM: $%04x #$%02x\n", addr,
+                        data);
+                return;
+#endif
+        } else if (addr >= 0x4000) {
+                fprintf(
+                    stderr,
+                    "tried to write to inaccessible address: $%04x #$%02x\n",
+                    addr, data);
+                return;
+        }
+        state->memory[addr] = data;
+}
+
+uint8_t cpu_read(cpu* state, uint16_t addr) {
+        if (addr >= 0x4000) {
+                fprintf(stderr,
+                        "tried to read from inaccessible address: $%04x\n",
+                        addr);
+                return 0;
+        }
+        return state->memory[addr];
+}
+
 void unimplementedInstruction(uint8_t opcode) {
         fprintf(stderr, "Error: Unimplemnted instruction: 0x%02x\n", opcode);
         exit(1);
 }
 
 uint8_t parity(uint8_t n) {
-        size_t parity = 0;
+        size_t parity = 1;
         while (n != 0) {
-                parity = !parity;
-                n &= (n - 1);
+                if (n & 0x01) {
+                        parity = !parity;
+                }
+                n = n >> 1;
         }
         return parity;
 }
@@ -96,8 +147,40 @@ void cmp(cpu* state, uint8_t d) {
         state->a = a;
 }
 
-void cpu_emulateOp(cpu* state) {
-        uint8_t opcode = state->memory[state->pc];
+void dad(cpu* state, uint16_t dd) {
+        uint16_t hl = (state->h << 8) | state->l;
+        uint32_t sum = hl + dd;
+        hl += dd;
+        state->h = (sum >> 8) & 0xff;
+        state->l = sum & 0xff;
+        state->cc.cy = sum > 0xffff;
+}
+
+void call(cpu* state) {
+        uint16_t ret = state->pc + 2;
+        uint16_t addr =
+            cpu_read(state, state->pc + 1) << 8 | cpu_read(state, state->pc);
+
+#ifdef CPUDIAG
+        if (addr == 0x0689) {
+                fprintf(stderr, "error called at: %04x\n", state->pc);
+        }
+#endif
+        cpu_write(state, state->sp - 1, (ret >> 8) & 0xff);
+        cpu_write(state, state->sp - 2, (ret & 0xff));
+        state->sp -= 2;
+        state->pc = addr;
+}
+
+void ret(cpu* state) {
+        state->pc =
+            (cpu_read(state, state->sp + 1) << 8) | cpu_read(state, state->sp);
+        state->sp += 2;
+}
+
+uint8_t cpu_emulateOp(cpu* state) {
+        uint8_t opcode = cpu_read(state, state->pc);
+        state->pc++;
         switch (opcode) {
                 case 0x00:  // NOP
                 {
@@ -105,15 +188,15 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x01:  // LXI B d16
                 {
-                        state->b = state->memory[state->pc + 2];
-                        state->c = state->memory[state->pc + 1];
+                        state->b = cpu_read(state, state->pc + 1);
+                        state->c = cpu_read(state, state->pc);
                         state->pc += 2;
                         break;
                 }
                 case 0x02:  // STAX B
                 {
                         uint16_t addr = (state->b << 8) | state->c;
-                        state->memory[addr] = state->a;
+                        cpu_write(state, addr, state->a);
                         break;
                 }
                 case 0x03:  // INX B
@@ -136,28 +219,39 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x06:  // MVI B d8
                 {
-                        state->b = state->memory[state->pc + 1];
+                        state->b = cpu_read(state, state->pc);
                         state->pc++;
                         break;
                 }
-                case 0x07: {
-                        unimplementedInstruction(opcode);
+                case 0x07:  // RLC
+                {
+                        uint8_t x = state->a;
+                        state->a = (x << 1) | ((x >> 7) & 1);
+                        state->cc.cy = (x >> 7) & 1;
                         break;
                 }
                 case 0x08: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0x09: {
-                        unimplementedInstruction(opcode);
+                case 0x09:  // DAD B
+                {
+                        uint16_t bc = (state->b << 8) | state->c;
+                        dad(state, bc);
                         break;
                 }
-                case 0x0a: {
-                        unimplementedInstruction(opcode);
+                case 0x0a:  // LDAX B
+                {
+                        uint16_t bc = (state->b << 8) | state->c;
+                        state->a = cpu_read(state, bc);
                         break;
                 }
-                case 0x0b: {
-                        unimplementedInstruction(opcode);
+                case 0x0b:  // DCX B
+                {
+                        uint16_t bc = (state->b << 8) | state->c;
+                        bc--;
+                        state->b = (bc >> 8) & 0xff;
+                        state->c = bc & 0xff;
                         break;
                 }
                 case 0x0c:  // INR C
@@ -172,7 +266,7 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x0e:  // MVI C d8
                 {
-                        state->c = state->memory[state->pc + 1];
+                        state->c = cpu_read(state, state->pc);
                         state->pc++;
                         break;
                 }
@@ -189,13 +283,15 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x11:  // LXI D d16
                 {
-                        state->d = state->memory[state->pc + 2];
-                        state->e = state->memory[state->pc + 1];
+                        state->d = cpu_read(state, state->pc + 1);
+                        state->e = cpu_read(state, state->pc);
                         state->pc += 2;
                         break;
                 }
-                case 0x12: {
-                        unimplementedInstruction(opcode);
+                case 0x12:  // STAX D
+                {
+                        uint16_t addr = (state->d << 8) | state->e;
+                        cpu_write(state, addr, state->a);
                         break;
                 }
                 case 0x13:  // INX D
@@ -218,12 +314,15 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x16:  // MVI D d8
                 {
-                        state->d = state->memory[state->pc + 1];
+                        state->d = cpu_read(state, state->pc);
                         state->pc++;
                         break;
                 }
-                case 0x17: {
-                        unimplementedInstruction(opcode);
+                case 0x17:  // RAL
+                {
+                        uint8_t x = state->a;
+                        state->a = (x << 1) | (state->cc.cy & 1);
+                        state->cc.cy = (x >> 7) & 1;
                         break;
                 }
                 case 0x18: {
@@ -232,18 +331,14 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x19:  // DAD D
                 {
-                        uint16_t hl = (state->h << 8) | state->l;
                         uint16_t de = (state->d << 8) | state->e;
-                        hl += de;
-                        state->h = (hl >> 8) & 0xff;
-                        state->l = hl & 0xff;
-                        state->cc.cy = de < hl;
+                        dad(state, de);
                         break;
                 }
                 case 0x1a:  // LDAX D
                 {
                         uint16_t de = (state->d << 8) | state->e;
-                        state->a = state->memory[de];
+                        state->a = cpu_read(state, de);
                         break;
                 }
                 case 0x1b:  // DCX D
@@ -266,7 +361,7 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x1e:  // MVI E d8
                 {
-                        state->e = state->memory[state->pc + 1];
+                        state->e = cpu_read(state, state->pc);
                         state->pc++;
                         break;
                 }
@@ -274,7 +369,7 @@ void cpu_emulateOp(cpu* state) {
                 {
                         uint8_t x = state->a;
                         state->a = (state->cc.cy << 7) | (x >> 1);
-                        state->cc.cy = 1 == (x & 1);
+                        state->cc.cy = x & 1;
                         break;
                 }
                 case 0x20: {
@@ -283,13 +378,18 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x21:  // LXI H d16
                 {
-                        state->h = state->memory[state->pc + 2];
-                        state->l = state->memory[state->pc + 1];
+                        state->h = cpu_read(state, state->pc + 1);
+                        state->l = cpu_read(state, state->pc);
                         state->pc += 2;
                         break;
                 }
-                case 0x22: {
-                        unimplementedInstruction(opcode);
+                case 0x22:  // SHLD
+                {
+                        uint16_t addr = (cpu_read(state, state->pc + 1) << 8) |
+                                        cpu_read(state, state->pc);
+                        cpu_write(state, addr + 1, state->h);
+                        cpu_write(state, addr, state->l);
+                        state->pc += 2;
                         break;
                 }
                 case 0x23:  // INX H
@@ -312,7 +412,7 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x26:  // MVI H d8
                 {
-                        state->h = state->memory[state->pc + 1];
+                        state->h = cpu_read(state, state->pc);
                         state->pc++;
                         break;
                 }
@@ -324,16 +424,27 @@ void cpu_emulateOp(cpu* state) {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0x29: {
-                        unimplementedInstruction(opcode);
+                case 0x29:  // DAD H
+                {
+                        uint16_t hl = (state->h << 8) | state->l;
+                        dad(state, hl);
                         break;
                 }
-                case 0x2a: {
-                        unimplementedInstruction(opcode);
+                case 0x2a:  // LHLD addr
+                {
+                        uint16_t addr = (cpu_read(state, state->pc + 1) << 8) |
+                                        cpu_read(state, state->pc);
+                        state->h = cpu_read(state, addr + 1);
+                        state->l = cpu_read(state, addr);
+                        state->pc += 2;
                         break;
                 }
-                case 0x2b: {
-                        unimplementedInstruction(opcode);
+                case 0x2b:  // DCX H
+                {
+                        uint16_t hl = (state->h << 8) | state->l;
+                        hl--;
+                        state->h = (hl >> 8) & 0xff;
+                        state->l = hl & 0xff;
                         break;
                 }
                 case 0x2c:  // INR L
@@ -348,7 +459,7 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x2e:  // MVI L d8
                 {
-                        state->l = state->memory[state->pc + 1];
+                        state->l = cpu_read(state, state->pc);
                         state->pc++;
                         break;
                 }
@@ -364,16 +475,16 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x31:  // LXI SP d16
                 {
-                        state->sp = (state->memory[state->pc + 2] << 8) |
-                                    state->memory[state->pc + 1];
+                        state->sp = (cpu_read(state, state->pc + 1) << 8) |
+                                    cpu_read(state, state->pc);
                         state->pc += 2;
                         break;
                 }
                 case 0x32:  // STA adr
                 {
-                        uint16_t addr = (state->memory[state->pc + 2] << 8) |
-                                        state->memory[state->pc + 1];
-                        state->memory[addr] = state->a;
+                        uint16_t addr = (cpu_read(state, state->pc + 1) << 8) |
+                                        cpu_read(state, state->pc);
+                        cpu_write(state, addr, state->a);
                         state->pc += 2;
                         break;
                 }
@@ -385,39 +496,75 @@ void cpu_emulateOp(cpu* state) {
                 case 0x34:  // INR M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
+                        if (hl < 0x2000) {
+#ifndef CPUDIAG
+                                fprintf(
+                                    stderr,
+                                    "tried to write to ROM (INR M): $%04x\n",
+                                    hl);
+                                break;
+#endif
+                        } else if (hl >= 0x4000) {
+                                fprintf(
+                                    stderr,
+                                    "tried to write to inaccessible address "
+                                    "(INR M): "
+                                    "$%04x\n",
+                                    hl);
+                                break;
+                        }
                         inr(state, &state->memory[hl]);
                         break;
                 }
                 case 0x35:  // DCR M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
+                        if (hl < 0x2000) {
+#ifndef CPUDIAG
+                                fprintf(
+                                    stderr,
+                                    "tried to write to ROM (DCR M): $%04x\n",
+                                    hl);
+                                break;
+#endif
+                        } else if (hl >= 0x4000) {
+                                fprintf(
+                                    stderr,
+                                    "tried to write to inaccessible address "
+                                    "(DCR M): "
+                                    "$%04x\n",
+                                    hl);
+                                break;
+                        }
                         dcr(state, &state->memory[hl]);
                         break;
                 }
                 case 0x36:  // MVI M d8
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->memory[state->pc + 1];
+                        cpu_write(state, hl, cpu_read(state, state->pc));
                         state->pc++;
                         break;
                 }
-                case 0x37: {
-                        unimplementedInstruction(opcode);
+                case 0x37:  // STC
+                {
+                        state->cc.cy = 1;
                         break;
                 }
                 case 0x38: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0x39: {
-                        unimplementedInstruction(opcode);
+                case 0x39:  // DAD SP
+                {
+                        dad(state, state->sp);
                         break;
                 }
                 case 0x3a:  // LDA adr
                 {
-                        uint16_t addr = (state->memory[state->pc + 2] << 8) |
-                                        state->memory[state->pc + 1];
-                        state->a = state->memory[addr];
+                        uint16_t addr = (cpu_read(state, state->pc + 1) << 8) |
+                                        cpu_read(state, state->pc);
+                        state->a = cpu_read(state, addr);
                         state->pc += 2;
                         break;
                 }
@@ -438,12 +585,13 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0x3e:  // MVI A d8
                 {
-                        state->a = state->memory[state->pc + 1];
+                        state->a = cpu_read(state, state->pc);
                         state->pc++;
                         break;
                 }
-                case 0x3f: {
-                        unimplementedInstruction(opcode);
+                case 0x3f:  // CMC
+                {
+                        state->cc.cy = !state->cc.cy;
                         break;
                 }
                 case 0x40:  // MOV B B
@@ -473,7 +621,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x46:  // MOV B M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->b = state->memory[hl];
+                        state->b = cpu_read(state, hl);
                         break;
                 }
                 case 0x47:  // MOV B A
@@ -514,7 +662,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x4e:  // MOV C M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->c = state->memory[hl];
+                        state->c = cpu_read(state, hl);
                         break;
                 }
                 case 0x4f:  // MOV C A
@@ -555,7 +703,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x56:  // MOV D M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->d = state->memory[hl];
+                        state->d = cpu_read(state, hl);
                         break;
                 }
                 case 0x57:  // MOV D A
@@ -596,7 +744,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x5e:  // MOV E M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->e = state->memory[hl];
+                        state->e = cpu_read(state, hl);
                         break;
                 }
                 case 0x5f:  // MOV E A
@@ -637,7 +785,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x66:  // MOV H M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->h = state->memory[hl];
+                        state->h = cpu_read(state, hl);
                         break;
                 }
                 case 0x67:  // MOV H A
@@ -678,7 +826,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x6e:  // MOV L M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->l = state->memory[hl];
+                        state->l = cpu_read(state, hl);
                         break;
                 }
                 case 0x6f:  // MOV L A
@@ -689,37 +837,37 @@ void cpu_emulateOp(cpu* state) {
                 case 0x70:  // MOV M B
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->b;
+                        cpu_write(state, hl, state->b);
                         break;
                 }
                 case 0x71:  // MOV M C
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->c;
+                        cpu_write(state, hl, state->c);
                         break;
                 }
                 case 0x72:  // MOV M D
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->d;
+                        cpu_write(state, hl, state->d);
                         break;
                 }
                 case 0x73:  // MOV M E
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->e;
+                        cpu_write(state, hl, state->e);
                         break;
                 }
                 case 0x74:  // MOV M H
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->h;
+                        cpu_write(state, hl, state->h);
                         break;
                 }
                 case 0x75:  // MOV M L
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->l;
+                        cpu_write(state, hl, state->l);
                         break;
                 }
                 case 0x76:  // HLT
@@ -730,7 +878,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x77:  // MOV M A
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->memory[hl] = state->a;
+                        cpu_write(state, hl, state->a);
                         break;
                 }
                 case 0x78:  // MOV A B
@@ -766,7 +914,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x7e:  // MOV A M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        state->a = state->memory[hl];
+                        state->a = cpu_read(state, hl);
                         break;
                 }
                 case 0x7f:  // MOV A A
@@ -807,7 +955,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x86:  // ADD M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        add(state, state->memory[hl]);
+                        add(state, cpu_read(state, hl));
                         break;
                 }
                 case 0x87:  // ADD A
@@ -848,7 +996,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x8e:  // ADC M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        add(state, state->memory[hl] + state->cc.cy);
+                        add(state, cpu_read(state, hl) + state->cc.cy);
                         break;
                 }
                 case 0x8f:  // ADC A
@@ -889,7 +1037,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x96:  // SUB M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        sub(state, state->memory[hl]);
+                        sub(state, cpu_read(state, hl));
                         break;
                 }
                 case 0x97:  // SUB A
@@ -930,7 +1078,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0x9e:  // SBB M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        sub(state, state->memory[hl] + state->cc.cy);
+                        sub(state, cpu_read(state, hl) + state->cc.cy);
                         break;
                 }
                 case 0x9f:  // SBB A
@@ -971,7 +1119,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0xa6:  // ANA M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        and(state, state->memory[hl]);
+                        and(state, cpu_read(state, hl));
                         break;
                 }
                 case 0xa7:  // ANA A
@@ -1012,7 +1160,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0xae:  // XRA M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        xra(state, state->memory[hl]);
+                        xra(state, cpu_read(state, hl));
                         break;
                 }
                 case 0xaf:  // XRA A
@@ -1053,7 +1201,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0xb6:  // ORA M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        ora(state, state->memory[hl]);
+                        ora(state, cpu_read(state, hl));
                         break;
                 }
                 case 0xb7:  // ORA A
@@ -1094,7 +1242,7 @@ void cpu_emulateOp(cpu* state) {
                 case 0xbe:  // CMP M
                 {
                         uint16_t hl = (state->h << 8) | state->l;
-                        cmp(state, state->memory[hl]);
+                        cmp(state, cpu_read(state, hl));
                         break;
                 }
                 case 0xbf:  // CMP A
@@ -1104,52 +1252,56 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0xc0:  // RNZ
                 {
-                        if (!state->cc.z) {
-                                state->pc =
-                                    (state->memory[state->sp + 1] << 8) |
-                                    state->memory[state->sp];
-                                state->sp += 2;
-                                return;
+                        if (state->cc.z) {
+                                break;
                         }
+                        state->pc = (cpu_read(state, state->sp + 1) << 8) |
+                                    cpu_read(state, state->sp);
+                        state->sp += 2;
                         break;
                 }
                 case 0xc1:  // POP B
                 {
-                        state->c = state->memory[state->sp];
-                        state->b = state->memory[state->sp + 1];
+                        state->b = cpu_read(state, state->sp + 1);
+                        state->c = cpu_read(state, state->sp);
                         state->sp += 2;
                         break;
                 }
                 case 0xc2:  // JNZ addr
                 {
-                        if (!state->cc.z) {
-                                state->pc = state->memory[state->pc + 2] << 8 |
-                                            state->memory[state->pc + 1];
-                                return;
+                        if (state->cc.z) {
+                                state->pc += 2;
+                                break;
                         }
-                        state->pc += 2;
+                        state->pc = cpu_read(state, state->pc + 1) << 8 |
+                                    cpu_read(state, state->pc);
                         break;
                 }
                 case 0xc3:  // JMP addr
                 {
-                        state->pc = state->memory[state->pc + 2] << 8 |
-                                    state->memory[state->pc + 1];
-                        return;
+                        state->pc = cpu_read(state, state->pc + 1) << 8 |
+                                    cpu_read(state, state->pc);
+                        break;
                 }
-                case 0xc4: {
-                        unimplementedInstruction(opcode);
+                case 0xc4:  // CNZ addr
+                {
+                        if (!state->cc.z) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
                 case 0xc5:  // PUSH B
                 {
-                        state->memory[state->sp - 1] = state->b;
-                        state->memory[state->sp - 2] = state->c;
+                        cpu_write(state, state->sp - 1, state->b);
+                        cpu_write(state, state->sp - 2, state->c);
                         state->sp -= 2;
                         break;
                 }
                 case 0xc6:  // ADI d8
                 {
-                        add(state, state->memory[state->pc + 1]);
+                        add(state, cpu_read(state, state->pc));
                         state->pc++;
                         break;
                 }
@@ -1157,57 +1309,107 @@ void cpu_emulateOp(cpu* state) {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xc8: {
-                        unimplementedInstruction(opcode);
+                case 0xc8:  // RZ
+                {
+                        if (!state->cc.z) {
+                                break;
+                        }
+                        state->pc = (cpu_read(state, state->sp + 1) << 8) |
+                                    cpu_read(state, state->sp);
+                        state->sp += 2;
                         break;
                 }
                 case 0xc9:  // RET
                 {
-                        state->pc = (state->memory[state->sp + 1] << 8) |
-                                    state->memory[state->sp];
-                        state->sp += 2;
-                        return;
+                        ret(state);
+                        break;
                 }
-                case 0xca: {
-                        unimplementedInstruction(opcode);
+                case 0xca:  // JZ addr
+                {
+                        if (!state->cc.z) {
+                                state->pc += 2;
+                                break;
+                        }
+                        state->pc = (cpu_read(state, state->pc + 1) << 8) |
+                                    cpu_read(state, state->pc);
                         break;
                 }
                 case 0xcb: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xcc: {
-                        unimplementedInstruction(opcode);
+                case 0xcc:  // CZ addr
+                {
+                        if (state->cc.z) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
                 case 0xcd:  // CALL addr
                 {
-                        uint16_t ret = state->pc + 2;
-                        state->memory[state->sp - 1] = (ret >> 8) & 0xff;
-                        state->memory[state->sp - 2] = (ret & 0xff);
-                        state->sp -= 2;
-                        state->pc = state->memory[state->pc + 2] << 8 |
-                                    state->memory[state->pc + 1];
-                        return;
+#ifdef CPUDIAG
+                        uint16_t addr = cpu_read(state, state->pc + 1) << 8 |
+                                        cpu_read(state, state->pc);
+                        if (addr == 0x0005) {
+                                if (state->c == 9) {
+                                        uint16_t offset =
+                                            (state->d << 8) | (state->e);
+                                        char* str =
+                                            (char*)&state
+                                                ->memory[offset +
+                                                         3];  // skip the
+                                                              // prefix bytes
+                                        while (*str != '$')
+                                                printf("%c", *str++);
+                                        printf("\n");
+                                } else if (state->c == 2) {
+                                        printf("print char routine called\n");
+                                        exit(1);
+                                }
+                        } else if (addr == 0x0000) {
+                                exit(0);
+                        } else
+#endif
+                        {
+                                call(state);
+                                break;
+                        }
                 }
-                case 0xce: {
-                        unimplementedInstruction(opcode);
+                case 0xce:  // ACI d8
+                {
+                        add(state, cpu_read(state, state->pc) + state->cc.cy);
+                        state->pc++;
                         break;
                 }
                 case 0xcf: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xd0: {
-                        unimplementedInstruction(opcode);
+                case 0xd0:  // RNC
+                {
+                        if (!state->cc.cy) {
+                                ret(state);
+                                break;
+                        }
                         break;
                 }
-                case 0xd1: {
-                        unimplementedInstruction(opcode);
+                case 0xd1:  // POP D
+                {
+                        state->d = cpu_read(state, state->sp + 1);
+                        state->e = cpu_read(state, state->sp);
+                        state->sp += 2;
                         break;
                 }
-                case 0xd2: {
-                        unimplementedInstruction(opcode);
+                case 0xd2:  // JNC addr
+                {
+                        if (state->cc.cy) {
+                                state->pc += 2;
+                                break;
+                        }
+                        state->pc = cpu_read(state, state->pc + 1) << 8 |
+                                    cpu_read(state, state->pc);
                         break;
                 }
                 case 0xd3:  // OUT d8
@@ -1216,81 +1418,136 @@ void cpu_emulateOp(cpu* state) {
                         state->pc++;
                         break;
                 }
-                case 0xd4: {
-                        unimplementedInstruction(opcode);
+                case 0xd4:  // CNC addr
+                {
+                        if (!state->cc.cy) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
-                case 0xd5: {
-                        unimplementedInstruction(opcode);
+                case 0xd5:  // PUSH D
+                {
+                        cpu_write(state, state->sp - 1, state->d);
+                        cpu_write(state, state->sp - 2, state->e);
+                        state->sp -= 2;
                         break;
                 }
-                case 0xd6: {
-                        unimplementedInstruction(opcode);
+                case 0xd6:  // SUI d8
+                {
+                        sub(state, cpu_read(state, state->pc));
+                        state->pc++;
                         break;
                 }
                 case 0xd7: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xd8: {
-                        unimplementedInstruction(opcode);
+                case 0xd8:  // RC
+                {
+                        if (state->cc.cy) {
+                                ret(state);
+                                break;
+                        }
                         break;
                 }
                 case 0xd9: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xda: {
-                        unimplementedInstruction(opcode);
+                case 0xda:  // JC addr
+                {
+                        if (!state->cc.cy) {
+                                state->pc += 2;
+                                break;
+                        }
+                        state->pc = (cpu_read(state, state->pc + 1) << 8) |
+                                    cpu_read(state, state->pc);
                         break;
                 }
                 case 0xdb: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xdc: {
-                        unimplementedInstruction(opcode);
+                case 0xdc:  // CC addr
+                {
+                        if (state->cc.cy) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
                 case 0xdd: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xde: {
-                        unimplementedInstruction(opcode);
+                case 0xde:  // SBI d8
+                {
+                        sub(state, cpu_read(state, state->pc) + state->cc.cy);
+                        state->pc++;
                         break;
                 }
                 case 0xdf: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xe0: {
-                        unimplementedInstruction(opcode);
+                case 0xe0:  // RPO
+                {
+                        if (!state->cc.p) {
+                                ret(state);
+                                break;
+                        }
                         break;
                 }
-                case 0xe1: {
-                        unimplementedInstruction(opcode);
+                case 0xe1:  // POP H
+                {
+                        state->h = cpu_read(state, state->sp + 1);
+                        state->l = cpu_read(state, state->sp);
+                        state->sp += 2;
                         break;
                 }
-                case 0xe2: {
-                        unimplementedInstruction(opcode);
+                case 0xe2:  // JPO addr
+                {
+                        if (!state->cc.p) {
+                                state->pc =
+                                    (cpu_read(state, state->pc + 1) << 8) |
+                                    cpu_read(state, state->pc);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
-                case 0xe3: {
-                        unimplementedInstruction(opcode);
+                case 0xe3:  // XTHL
+                {
+                        uint8_t tmp = state->h;
+                        state->h = cpu_read(state, state->sp + 1);
+                        cpu_write(state, state->sp + 1, tmp);
+                        tmp = state->l;
+                        state->l = cpu_read(state, state->sp);
+                        cpu_write(state, state->sp, tmp);
                         break;
                 }
-                case 0xe4: {
-                        unimplementedInstruction(opcode);
+                case 0xe4:  // CPO addr
+                {
+                        if (!state->cc.p) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
-                case 0xe5: {
-                        unimplementedInstruction(opcode);
+                case 0xe5:  // PUSH H
+                {
+                        cpu_write(state, state->sp - 1, state->h);
+                        cpu_write(state, state->sp - 2, state->l);
+                        state->sp -= 2;
                         break;
                 }
                 case 0xe6:  // ANI d8
                 {
-                        and(state, state->memory[state->pc + 1]);
+                        and(state, cpu_read(state, state->pc));
                         state->pc++;
                         break;
                 }
@@ -1298,56 +1555,90 @@ void cpu_emulateOp(cpu* state) {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xe8: {
-                        unimplementedInstruction(opcode);
+                case 0xe8:  // RPE
+                {
+                        if (state->cc.p) {
+                                ret(state);
+                                break;
+                        }
                         break;
                 }
-                case 0xe9: {
-                        unimplementedInstruction(opcode);
+                case 0xe9:  // PCHL
+                {
+                        state->pc = (state->h << 8) | state->l;
                         break;
                 }
-                case 0xea: {
-                        unimplementedInstruction(opcode);
+                case 0xea:  // JPE addr
+                {
+                        if (!state->cc.p) {
+                                state->pc += 2;
+                                break;
+                        }
+                        state->pc = (cpu_read(state, state->pc + 1) << 8) |
+                                    cpu_read(state, state->pc);
                         break;
                 }
-                case 0xeb: {
-                        unimplementedInstruction(opcode);
+                case 0xeb:  // XCHG
+                {
+                        uint8_t tmp = state->h;
+                        state->h = state->d;
+                        state->d = tmp;
+                        tmp = state->l;
+                        state->l = state->e;
+                        state->e = tmp;
                         break;
                 }
-                case 0xec: {
-                        unimplementedInstruction(opcode);
+                case 0xec:  // CPE addr
+                {
+                        if (state->cc.p) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
                 case 0xed: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xee: {
-                        unimplementedInstruction(opcode);
+                case 0xee:  // XRI d8
+                {
+                        xra(state, cpu_read(state, state->pc));
+                        state->pc++;
                         break;
                 }
                 case 0xef: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xf0: {
-                        unimplementedInstruction(opcode);
+                case 0xf0:  // RP
+                {
+                        if (!state->cc.s) {
+                                ret(state);
+                                break;
+                        }
                         break;
                 }
                 case 0xf1:  // POP PSW
                 {
-                        state->a = state->memory[state->sp + 1];
-                        uint8_t psw = state->memory[state->sp];
+                        state->a = cpu_read(state, state->sp + 1);
+                        uint8_t psw = cpu_read(state, state->sp);
                         state->cc.z = 0x01 == (psw & 0x01);
-                        state->cc.z = 0x02 == (psw & 0x02);
-                        state->cc.z = 0x04 == (psw & 0x04);
-                        state->cc.z = 0x08 == (psw & 0x08);
-                        state->cc.z = 0x10 == (psw & 0x10);
+                        state->cc.s = 0x02 == (psw & 0x02);
+                        state->cc.p = 0x04 == (psw & 0x04);
+                        state->cc.cy = 0x08 == (psw & 0x08);
+                        state->cc.ac = 0x10 == (psw & 0x10);
                         state->sp += 2;
                         break;
                 }
-                case 0xf2: {
-                        unimplementedInstruction(opcode);
+                case 0xf2:  // JP addr
+                {
+                        if (state->cc.s) {
+                                state->pc += 2;
+                                break;
+                        }
+                        state->pc = (cpu_read(state, state->pc + 1) << 8) |
+                                    cpu_read(state, state->pc);
                         break;
                 }
                 case 0xf3:  // DI
@@ -1355,38 +1646,56 @@ void cpu_emulateOp(cpu* state) {
                         state->int_enable = 0;
                         break;
                 }
-                case 0xf4: {
-                        unimplementedInstruction(opcode);
+                case 0xf4:  // CP addr
+                {
+                        if (!state->cc.s) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
                 case 0xf5:  // PUSH PSW
                 {
-                        state->memory[state->sp - 1] = state->a;
+                        cpu_write(state, state->sp - 1, state->a);
                         uint8_t psw =
                             (state->cc.z | state->cc.s << 1 | state->cc.p << 2 |
                              state->cc.cy << 3 | state->cc.ac << 4);
-                        state->memory[state->sp - 2] = psw;
+                        cpu_write(state, state->sp - 2, psw);
                         state->sp -= 2;
                         break;
                 }
-                case 0xf6: {
-                        unimplementedInstruction(opcode);
+                case 0xf6:  // ORI d8
+                {
+                        ora(state, cpu_read(state, state->pc));
+                        state->pc++;
                         break;
                 }
                 case 0xf7: {
                         unimplementedInstruction(opcode);
                         break;
                 }
-                case 0xf8: {
-                        unimplementedInstruction(opcode);
+                case 0xf8:  // RM
+                {
+                        if (state->cc.s) {
+                                ret(state);
+                                break;
+                        }
                         break;
                 }
-                case 0xf9: {
-                        unimplementedInstruction(opcode);
+                case 0xf9:  // SPHL
+                {
+                        state->sp = (state->h << 8) | state->l;
                         break;
                 }
-                case 0xfa: {
-                        unimplementedInstruction(opcode);
+                case 0xfa:  // JM addr
+                {
+                        if (!state->cc.s) {
+                                state->pc += 2;
+                                break;
+                        }
+                        state->pc = (cpu_read(state, state->pc + 1) << 8) |
+                                    cpu_read(state, state->pc);
                         break;
                 }
                 case 0xfb:  // EI
@@ -1394,8 +1703,13 @@ void cpu_emulateOp(cpu* state) {
                         state->int_enable = 1;
                         break;
                 }
-                case 0xfc: {
-                        unimplementedInstruction(opcode);
+                case 0xfc:  // CM addr
+                {
+                        if (state->cc.s) {
+                                call(state);
+                                break;
+                        }
+                        state->pc += 2;
                         break;
                 }
                 case 0xfd: {
@@ -1404,7 +1718,7 @@ void cpu_emulateOp(cpu* state) {
                 }
                 case 0xfe:  // CPI d8
                 {
-                        cmp(state, state->memory[state->pc + 1]);
+                        cmp(state, cpu_read(state, state->pc));
                         state->pc++;
                         break;
                 }
@@ -1418,5 +1732,15 @@ void cpu_emulateOp(cpu* state) {
                 }
         }
 
-        state->pc++;
+        return op_cycles[opcode];
+}
+
+void cpu_interrupt(cpu* state, uint8_t interrupt_num) {
+        cpu_write(state, state->sp - 1, (state->pc >> 8) & 0xff);
+        cpu_write(state, state->sp - 2, state->pc & 0xff);
+        state->sp -= 2;
+
+        state->pc = 8 * interrupt_num;
+
+        state->int_enable = 0;
 }
