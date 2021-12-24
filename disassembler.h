@@ -3,6 +3,6 @@
 
 #include <stdint.h>
 
-int disassembleOp(uint8_t pc, uint8_t* memory, char* s);
+int disassembleOp(uint16_t pc, uint8_t const* memory, char* s);
 
 #endif

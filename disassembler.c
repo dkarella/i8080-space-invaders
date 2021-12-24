@@ -269,7 +269,7 @@ Opcode opcodes[256] = {
     [0xff] = {.instruction = "RST 7"},
 };
 
-int disassembleOp(uint8_t pc, uint8_t* memory, char* s) {
+int disassembleOp(uint16_t pc, uint8_t const* memory, char* s) {
         if (!s || !memory) {
                 return -1;
         }
@@ -281,21 +281,25 @@ int disassembleOp(uint8_t pc, uint8_t* memory, char* s) {
         }
         if (opcode.arg == argtype_none) {
                 sprintf(s, "%02x %s", op, opcode.instruction);
+                return 0;
         }
         if (opcode.arg == argtype_d8) {
                 int a = memory[pc + 1];
                 sprintf(s, "%02x %s #$%02x", op, opcode.instruction, a);
+                return 1;
         }
         if (opcode.arg == argtype_d16) {
                 int a = memory[pc + 1];
                 int b = memory[pc + 2];
                 sprintf(s, "%02x %s #$%02x%02x", op, opcode.instruction, b, a);
+                return 2;
         }
         if (opcode.arg == argtype_addr) {
                 int a = memory[pc + 1];
                 int b = memory[pc + 2];
                 sprintf(s, "%02x %s $%02x%02x", op, opcode.instruction, b, a);
+                return 2;
         }
 
-        return 0;
+        return -1;
 }
