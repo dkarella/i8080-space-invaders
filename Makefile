@@ -21,3 +21,10 @@ clean:
 
 run: main
 	./main rom/invaders
+
+cpudiag:
+	$(CC) $(CFLAGS) -DCPUDIAG -c cpu.c -o cpu.o
+	$(CC) $(CFLAGS) -DCPUDIAG -c disassembler.c -o disassembler.o
+	$(CC) $(CFLAGS) -DCPUDIAG -c ports.c -o ports.o
+	$(CC) $(CFLAGS) -DCPUDIAG -o main main.c cpu.o disassembler.o ports.o $(LIBS)
+	./main rom/cpudiag.bin

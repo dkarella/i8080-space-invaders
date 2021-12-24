@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "cpu.h"
 #include "disassembler.h"
@@ -25,10 +26,11 @@ SDL_Window* window = 0;
 SDL_Renderer* renderer = 0;
 
 SDL_Color const color_debugInfo = {.r = 255, .g = 255, .b = 255};
-SDL_Color const color_debugInfoCurrent = {.r = 125, .g = 255, .b = 125};
 SDL_Color const color_grid = {.r = 128, .g = 128, .b = 128};
+SDL_Color const color_fill = {.r = 255, .g = 255, .b = 255};
 
 void cleanup() {
+        printf("Cleaning up...\n");
         ports_delete(pts);
         cpu_delete(state);
         if (renderer) {
@@ -39,6 +41,19 @@ void cleanup() {
         }
         SDL_Quit();
         TTF_Quit();
+}
+
+void dumpMEM(cpu* state, char const* file) {
+        FILE* f = fopen(file, "wb");
+        if (!f) {
+                fprintf(stderr, "Failed to open file in binary mode\n");
+                exit(1);
+        }
+
+        for (uint16_t i = 0x0000; i < 0x4000; ++i) {
+                fprintf(f, "0x%04x 0x%02x\n", i, state->memory[i]);
+        }
+        fclose(f);
 }
 
 void init() {
@@ -107,22 +122,20 @@ SDL_ERROR:
         goto DONE;
 }
 
+void render_grid(SDL_Renderer* renderer) {
+        SDL_SetRenderDrawColor(renderer, color_grid.r, color_grid.g,
+                               color_grid.b, 255);
+        int x = SCREEN_WIDTH / 4;
+        SDL_RenderDrawLine(renderer, x, 0, x, SCREEN_HEIGHT);
+}
+
 void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
                       ports const* pts) {
         char buf[128] = "";
         char buf2[128] = "";
-        int x = 0;
-        int y = 0;
         int ptsize = 12;
-        int err = 0;
-
-        SDL_SetRenderDrawColor(renderer, color_grid.r, color_grid.g,
-                               color_grid.b, 255);
-        x = SCREEN_WIDTH / 4;
-        SDL_RenderDrawLine(renderer, x, 0, x, SCREEN_HEIGHT);
-
-        y = 20;
-        x = 20;
+        int x = 20;
+        int y = 20;
 
         sprintf(buf, "PC: $%04x", state->pc);
         render_text(renderer, buf, ptsize, color_debugInfo, x, y);
@@ -132,8 +145,7 @@ void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
         render_text(renderer, buf, ptsize, color_debugInfo, x, y);
         y += 20;
 
-        err = disassembleOp(state->pc, state->memory, buf2);
-        if (err) {
+        if (disassembleOp(state->pc, state->memory, buf2) == -1) {
                 fprintf(stderr, "render_debugInfo: disassembleOp error\n");
                 exit(EXIT_FAILURE);
         }
@@ -224,19 +236,53 @@ void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
         y += 20;
 }
 
+uint8_t screen[256 * 28] = {0};
+
+void update_screen(cpu const* state) {
+        for (size_t i = 0; i < 256; ++i) {
+                for (size_t j = 0; j < 28; ++j) {
+                        uint16_t k = 28 * i + j;
+                        screen[k] = state->memory[k + 0x2400];
+                }
+        }
+}
+
+void render_screen(SDL_Renderer* renderer, cpu const* state) {
+        SDL_SetRenderDrawColor(renderer, color_fill.r, color_fill.g,
+                               color_fill.b, 255);
+
+        int x_offset = (SCREEN_WIDTH / 4) + 20;
+        int y_offset = 20;
+        for (size_t i = 0; i < 256; ++i) {
+                for (size_t j = 0; j < 28; ++j) {
+                        uint16_t k = 28 * i + j;
+                        for (size_t b = 0; b < 8; ++b) {
+                                uint8_t draw = screen[k] & (1 << b);
+                                if (!draw) {
+                                        continue;
+                                }
+
+                                int x = 28 * j + b + x_offset;
+                                int y = i + y_offset;
+                                SDL_RenderDrawPoint(renderer, x, y);
+                        }
+                }
+        }
+}
+
 void tick(cpu* state, ports* pts) {
-        uint8_t opcode = state->memory[state->pc];
+        uint8_t opcode = cpu_read(state, state->pc);
         switch (opcode) {
                 case 0xdb:  // IN
                 {
-                        uint8_t port = state->memory[state->pc + 1];
+                        uint8_t port = cpu_read(state, state->pc + 1);
                         state->a = ports_in(pts, port);
                         state->pc++;
                         break;
                 }
                 case 0xd3:  // OUT
                 {
-                        uint8_t port = state->memory[state->pc + 1];
+                        uint8_t port = cpu_read(state, state->pc + 1);
                         ports_out(pts, port, state->a);
                         state->pc++;
                         break;
@@ -246,12 +292,16 @@ void tick(cpu* state, ports* pts) {
                         break;
                 }
         }
+
+        update_screen(state);
 }
 
 void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
         switch (key.keysym.sym) {
                 case SDLK_0: {
-                        if (!running) {
+                        if (running) {
+                                running = 0;
+                        } else {
                                 tick(state, pts);
                         }
                         break;
@@ -314,6 +364,10 @@ void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
                 }
                 case SDLK_7: {
                         pts->inp2.bits.dip7 = 1;
+                        break;
+                }
+                case SDLK_r: {
+                        dumpMEM(state, "memdump.txt");
                         break;
                 }
                 default: {
@@ -407,8 +461,43 @@ int main(int argc, char* argv[static argc + 1]) {
                 fprintf(stderr, "Failed initialize cpu state\n");
                 return EXIT_FAILURE;
         }
+#ifdef CPUDIAG
+        fread(state->memory + 0x100, fsize, 1, f);
+#else
         fread(state->memory, fsize, 1, f);
+#endif
+
         fclose(f);
+
+#ifdef CPUDIAG
+        // Fix the first instruction to be JMP 0x100
+        state->memory[0] = 0xc3;
+        state->memory[1] = 0x00;
+        state->memory[2] = 0x01;
+
+        // Fix the stack pointer from 0x6ad to 0x7ad
+        // this 0x06 byte 112 in the code, which is
+        // byte 112 + 0x100 = 368 in memory
+        state->memory[368] = 0x7;
+
+        // Skip DAA test
+        state->memory[0x59c] = 0xc3;  // JMP
+        state->memory[0x59d] = 0xc2;
+        state->memory[0x59e] = 0x05;
+
+        FILE* asmf = fopen("cpudag.asm", "wb");
+        for (size_t pc = 0; pc < fsize + 0x100; ++pc) {
+                char s[265] = "";
+                int n = disassembleOp(pc, state->memory, s);
+                if (n == -1) {
+                        printf("failed to disassemble\n");
+                        return EXIT_FAILURE;
+                }
+                fprintf(asmf, "%04zx %s\n", pc, s);
+                pc += n;
+        }
+        fclose(asmf);
+#endif
 
         pts = ports_new();
 
@@ -432,6 +521,8 @@ int main(int argc, char* argv[static argc + 1]) {
         }
 
         SDL_Event e = {0};
+        clock_t lastInterrupt = clock();
+        uint8_t interrupt = 1;
         while (!quit) {
                 while (SDL_PollEvent(&e)) {
                         switch (e.type) {
@@ -452,10 +543,26 @@ int main(int argc, char* argv[static argc + 1]) {
                                 }
                         }
                 }
+                if (running) {
+                        tick(state, pts);
+                }
+
+                double elapsed =
+                    (double)(clock() - lastInterrupt) / CLOCKS_PER_SEC;
+                if (state->int_enable && elapsed > (1.0 / 30.0)) {
+                        printf("interrupt: %d\n", interrupt);
+                        cpu_interrupt(state, interrupt);
+                        lastInterrupt = clock();
+                        interrupt = interrupt == 1 ? 2 : 1;
+                }
 
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                 SDL_RenderClear(renderer);
-                render_debugInfo(renderer, state, pts);
+                render_grid(renderer);
+                if (!running) {
+                        render_debugInfo(renderer, state, pts);
+                }
+                render_screen(renderer, state);
                 SDL_RenderPresent(renderer);
 
                 if (running) {
