@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-uint8_t op_cycles[] = {
+size_t op_cycles[] = {
     4,  10, 7,  5,  5,  5,  7,  4,  4,  10, 7,  5,  5,  5,  7, 4,
     4,  10, 7,  5,  5,  5,  7,  4,  4,  10, 7,  5,  5,  5,  7, 4,
     4,  10, 16, 5,  5,  5,  7,  4,  4,  10, 16, 5,  5,  5,  7, 4,
@@ -66,7 +66,7 @@ void cpu_write(cpu* state, uint16_t addr, uint8_t data) {
         state->memory[addr] = data;
 }
 
-uint8_t cpu_read(cpu* state, uint16_t addr) {
+uint8_t cpu_read(cpu const* state, uint16_t addr) {
         if (addr >= 0x4000) {
                 fprintf(stderr,
                         "tried to read from inaccessible address: $%04x\n",
@@ -104,11 +104,11 @@ void add(cpu* state, uint8_t d) {
 void sub(cpu* state, uint8_t d) {
         uint8_t a = state->a;
         uint8_t x = state->a - d;
-        state->cc.z = (x & 0xff) == 0;
+        state->cc.z = x == 0;
         state->cc.s = (x & 0x80) != 0;
         state->cc.cy = a < d;
-        state->cc.p = parity(x & 0xff);
-        state->a = x & 0xff;
+        state->cc.p = parity(x);
+        state->a = x;
 }
 
 void inr(cpu* state, uint8_t* p) {
@@ -130,8 +130,8 @@ void dcr(cpu* state, uint8_t* p) {
 void logic(cpu* state, uint8_t x) {
         state->cc.z = (x == 0);
         state->cc.s = (0x80 == (x & 0x80));
+        state->cc.cy = 0;
         state->cc.p = parity(x);
-        state->cc.cy = 0;  // clear CY
         state->a = x;
 }
 
@@ -163,7 +163,7 @@ void call(cpu* state) {
 
 #ifdef CPUDIAG
         if (addr == 0x0689) {
-                fprintf(stderr, "error called at: %04x\n", state->pc);
+                fprintf(stderr, "error called at: %04x\n", state->pc - 1);
         }
 #endif
         cpu_write(state, state->sp - 1, (ret >> 8) & 0xff);
@@ -178,7 +178,7 @@ void ret(cpu* state) {
         state->sp += 2;
 }
 
-uint8_t cpu_emulateOp(cpu* state) {
+size_t cpu_emulateOp(cpu* state) {
         uint8_t opcode = cpu_read(state, state->pc);
         state->pc++;
         switch (opcode) {
@@ -416,8 +416,14 @@ uint8_t cpu_emulateOp(cpu* state) {
                         state->pc++;
                         break;
                 }
-                case 0x27: {
-                        unimplementedInstruction(opcode);
+                case 0x27:  // DAA
+                {
+                        if ((state->a & 0xf) > 9) {
+                                state->a += 6;
+                        }
+                        if ((state->a & 0xf0) > 0x90) {
+                                add(state, 0x60);
+                        }
                         break;
                 }
                 case 0x28: {

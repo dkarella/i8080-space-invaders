@@ -236,64 +236,57 @@ void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
         y += 20;
 }
 
-uint8_t screen[256 * 28] = {0};
-
-void update_screen(cpu const* state) {
-        for (size_t i = 0; i < 256; ++i) {
-                for (size_t j = 0; j < 28; ++j) {
-                        uint16_t k = 28 * i + j;
-                        screen[k] = state->memory[k + 0x2400];
-                }
-        }
-}
-
 void render_screen(SDL_Renderer* renderer, cpu const* state) {
+        SDL_Rect static rect = {0};
+        int static scale = 2;
+        int static x_offset = (SCREEN_WIDTH / 4) + 20;
+        int static y_offset = 20;
+
         SDL_SetRenderDrawColor(renderer, color_fill.r, color_fill.g,
                                color_fill.b, 255);
 
-        int x_offset = (SCREEN_WIDTH / 4) + 20;
-        int y_offset = 20;
-        for (size_t i = 0; i < 256; ++i) {
-                for (size_t j = 0; j < 28; ++j) {
-                        uint16_t k = 28 * i + j;
-                        for (size_t b = 0; b < 8; ++b) {
-                                uint8_t draw = screen[k] & (1 << b);
-                                if (!draw) {
-                                        continue;
+        size_t i = 0;
+        for (size_t x = 31; x < 32; --x) {
+                for (size_t b = 7; b < 8; --b) {
+                        for (size_t y = 0; y < 224; ++y) {
+                                uint8_t d =
+                                    cpu_read(state, 32 * y + x + 0x2400);
+                                if ((d >> b) & 0x1) {
+                                        rect.x = (i % 224) * scale + x_offset;
+                                        rect.y = (i / 224) * scale + y_offset;
+                                        rect.w = scale;
+                                        rect.h = scale;
+                                        SDL_RenderDrawRect(renderer, &rect);
                                 }
-
-                                int x = 28 * j + b + x_offset;
-                                int y = i + y_offset;
-                                SDL_RenderDrawPoint(renderer, x, y);
+                                ++i;
                         }
                 }
         }
 }
 
-void tick(cpu* state, ports* pts) {
+uint8_t tick(cpu* state, ports* pts) {
         uint8_t opcode = cpu_read(state, state->pc);
         switch (opcode) {
                 case 0xdb:  // IN
                 {
                         uint8_t port = cpu_read(state, state->pc + 1);
                         state->a = ports_in(pts, port);
-                        state->pc++;
-                        break;
+                        state->pc += 2;
+                        return 10;
                 }
                 case 0xd3:  // OUT
                 {
                         uint8_t port = cpu_read(state, state->pc + 1);
                         ports_out(pts, port, state->a);
-                        state->pc++;
-                        break;
+                        state->pc += 2;
+                        return 10;
                 }
                 default: {
-                        cpu_emulateOp(state);
-                        break;
                 }
         }
 
-        update_screen(state);
+        size_t cycles = cpu_emulateOp(state);
+        return cycles;
 }
 
 void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
@@ -440,6 +433,21 @@ void keyup(SDL_KeyboardEvent key, ports* pts) {
         }
 }
 
+size_t ncycles(clock_t lastTick) {
+        double elapsed = ((double)(clock() - lastTick)) / CLOCKS_PER_SEC;
+        return elapsed * 2000000;
+}
+
+size_t shouldInterrupt(clock_t lastInterrupt) {
+        double elapsed = ((double)(clock() - lastInterrupt)) / CLOCKS_PER_SEC;
+        return state->int_enable && elapsed > (1.0 / 120.0);
+}
+
+size_t shouldRender(clock_t lastRender) {
+        double elapsed = ((double)(clock() - lastRender)) / CLOCKS_PER_SEC;
+        return elapsed > (1.0 / 60.0);
+}
+
 int main(int argc, char* argv[static argc + 1]) {
         if (argc < 2) {
                 fprintf(stderr, "Please provide ROM file\n");
@@ -455,10 +463,15 @@ int main(int argc, char* argv[static argc + 1]) {
         fseek(f, 0L, SEEK_END);
         int fsize = ftell(f);
         fseek(f, 0L, SEEK_SET);
+        if (fsize > CPU_MEM) {
+                fprintf(stderr,
+                        "Provided file too big, wrong file or corrupted?\n");
+                return EXIT_FAILURE;
+        }
 
         state = cpu_new(CPU_MEM);
         if (!state) {
-                fprintf(stderr, "Failed initialize cpu state\n");
+                fprintf(stderr, "Failed to initialize cpu state\n");
                 return EXIT_FAILURE;
         }
 #ifdef CPUDIAG
@@ -521,7 +534,9 @@ int main(int argc, char* argv[static argc + 1]) {
         }
 
         SDL_Event e = {0};
+        clock_t lastTick = clock();
         clock_t lastInterrupt = clock();
+        clock_t lastRender = clock();
         uint8_t interrupt = 1;
         while (!quit) {
                 while (SDL_PollEvent(&e)) {
@@ -543,30 +558,40 @@ int main(int argc, char* argv[static argc + 1]) {
                                 }
                         }
                 }
-                if (running) {
-                        tick(state, pts);
-                }
-
-                double elapsed =
-                    (double)(clock() - lastInterrupt) / CLOCKS_PER_SEC;
-                if (state->int_enable && elapsed > (1.0 / 30.0)) {
-                        printf("interrupt: %d\n", interrupt);
+                if (shouldInterrupt(lastInterrupt)) {
                         cpu_interrupt(state, interrupt);
-                        lastInterrupt = clock();
                         interrupt = interrupt == 1 ? 2 : 1;
+                        lastInterrupt = clock();
                 }
-
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderClear(renderer);
-                render_grid(renderer);
-                if (!running) {
-                        render_debugInfo(renderer, state, pts);
-                }
-                render_screen(renderer, state);
-                SDL_RenderPresent(renderer);
-
                 if (running) {
-                        tick(state, pts);
+                        size_t n = ncycles(lastTick);
+                        while (n) {
+                                size_t cycles = tick(state, pts);
+                                if (cycles > n) {
+                                        break;
+                                }
+                                n -= cycles;
+                        }
+                        lastTick = clock();
+                } else {
+                        // prevent fast-forwarding
+                        lastTick = clock();
+                }
+
+                if (shouldRender(lastRender)) {
+                        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                        SDL_RenderClear(renderer);
+
+                        render_grid(renderer);
+                        render_screen(renderer, state);
+                        if (running) {
+                                // TODO: render about info and speed-up controls
+                        } else if (!running) {
+                                render_debugInfo(renderer, state, pts);
+                        }
+
+                        SDL_RenderPresent(renderer);
+                        lastRender = clock();
                 }
         }
 

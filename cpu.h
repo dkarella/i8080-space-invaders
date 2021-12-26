@@ -32,8 +32,8 @@ typedef struct cpu {
 
 cpu* cpu_new(size_t memsize);
 void cpu_delete(cpu* state);
-uint8_t cpu_emulateOp(cpu* state);
+size_t cpu_emulateOp(cpu* state);
 void cpu_interrupt(cpu* state, uint8_t interrupt_num);
-uint8_t cpu_read(cpu* state, uint16_t addr);
+uint8_t cpu_read(cpu const* state, uint16_t addr);
 
 #endif
