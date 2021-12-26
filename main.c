@@ -315,16 +315,22 @@ void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
                         pts->inp1.bits.p1_start = 1;
                         break;
                 }
+                case SDLK_p:
                 case SDLK_SPACE: {
                         pts->inp1.bits.p1_shot = 1;
+                        pts->inp2.bits.p2_shot = 1;
                         break;
                 }
+                case SDLK_a:
                 case SDLK_LEFT: {
                         pts->inp1.bits.p1_left = 1;
+                        pts->inp2.bits.p2_left = 1;
                         break;
                 }
+                case SDLK_d:
                 case SDLK_RIGHT: {
                         pts->inp1.bits.p1_right = 1;
+                        pts->inp2.bits.p2_right = 1;
                         break;
                 }
                 case SDLK_3: {
@@ -341,18 +347,6 @@ void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
                 }
                 case SDLK_6: {
                         pts->inp2.bits.dip6 = 1;
-                        break;
-                }
-                case SDLK_p: {
-                        pts->inp2.bits.p2_shot = 1;
-                        break;
-                }
-                case SDLK_a: {
-                        pts->inp2.bits.p2_left = 1;
-                        break;
-                }
-                case SDLK_d: {
-                        pts->inp2.bits.p2_right = 1;
                         break;
                 }
                 case SDLK_7: {
@@ -383,16 +377,22 @@ void keyup(SDL_KeyboardEvent key, ports* pts) {
                         pts->inp1.bits.p1_start = 0;
                         break;
                 }
+                case SDLK_p:
                 case SDLK_SPACE: {
                         pts->inp1.bits.p1_shot = 0;
+                        pts->inp2.bits.p2_shot = 0;
                         break;
                 }
+                case SDLK_a:
                 case SDLK_LEFT: {
                         pts->inp1.bits.p1_left = 0;
+                        pts->inp2.bits.p2_left = 0;
                         break;
                 }
+                case SDLK_d:
                 case SDLK_RIGHT: {
                         pts->inp1.bits.p1_right = 0;
+                        pts->inp2.bits.p2_right = 0;
                         break;
                 }
                 case SDLK_3: {
@@ -409,18 +409,6 @@ void keyup(SDL_KeyboardEvent key, ports* pts) {
                 }
                 case SDLK_6: {
                         pts->inp2.bits.dip6 = 0;
-                        break;
-                }
-                case SDLK_p: {
-                        pts->inp2.bits.p2_shot = 0;
-                        break;
-                }
-                case SDLK_a: {
-                        pts->inp2.bits.p2_left = 0;
-                        break;
-                }
-                case SDLK_d: {
-                        pts->inp2.bits.p2_right = 0;
                         break;
                 }
                 case SDLK_7: {
