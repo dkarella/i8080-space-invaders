@@ -17,7 +17,7 @@
 #define FONT_FILE "fonts/arkitech/Arkitech Medium.ttf"
 
 int quit = 0;
-int running = 0;
+int running = 1;
 
 cpu* state = 0;
 ports* pts = 0;
