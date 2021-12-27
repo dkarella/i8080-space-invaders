@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-typedef struct cpu_conditionCodes {
+typedef struct {
         // NOTE: these are "bit fields"
         // the number after the colon describes how many bits that field uses
         uint8_t z : 1;    // set if result is 0
@@ -15,7 +15,7 @@ typedef struct cpu_conditionCodes {
         uint8_t pad : 3;  // this is just padding to make the struct 8 bits long
 } cpu_conditionCodes;
 
-typedef struct cpu {
+typedef struct {
         uint8_t a;
         uint8_t b;
         uint8_t c;

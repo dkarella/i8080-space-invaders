@@ -15,9 +15,11 @@
 #define SCREEN_HEIGHT 720
 
 #define FONT_FILE "fonts/arkitech/Arkitech Medium.ttf"
+#define FONT_SIZE 12
 
 int quit = 0;
-int running = 1;
+int paused = 0;
+double playSpeed = 1.0;
 
 cpu* state = 0;
 ports* pts = 0;
@@ -25,35 +27,58 @@ ports* pts = 0;
 SDL_Window* window = 0;
 SDL_Renderer* renderer = 0;
 
-SDL_Color const color_debugInfo = {.r = 255, .g = 255, .b = 255};
 SDL_Color const color_grid = {.r = 128, .g = 128, .b = 128};
 SDL_Color const color_fill = {.r = 255, .g = 255, .b = 255};
 
-void cleanup() {
-        printf("Cleaning up...\n");
-        ports_delete(pts);
-        cpu_delete(state);
-        if (renderer) {
-                SDL_DestroyRenderer(renderer);
+SDL_Texture* text_atlas[128] = {0};
+
+int text_atlas_init() {
+        TTF_Font* font = 0;
+        SDL_Surface* surfaceMessage = 0;
+        SDL_Texture* texture = 0;
+        int err = 0;
+
+        font = TTF_OpenFont(FONT_FILE, FONT_SIZE);
+        if (!font) {
+                goto TTF_ERROR;
         }
-        if (window) {
-                SDL_DestroyWindow(window);
+
+        for (size_t i = 1; i < 128; ++i) {
+                char const c[] = {i, 0};
+
+                surfaceMessage = TTF_RenderText_Solid(font, c, color_fill);
+                if (!surfaceMessage) {
+                        goto TTF_ERROR;
+                }
+
+                texture =
+                    SDL_CreateTextureFromSurface(renderer, surfaceMessage);
+                if (!texture) {
+                        SDL_FreeSurface(surfaceMessage);
+                        goto SDL_ERROR;
+                }
+
+                text_atlas[i] = texture;
+                SDL_FreeSurface(surfaceMessage);
         }
-        SDL_Quit();
-        TTF_Quit();
+
+DONE:
+        TTF_CloseFont(font);
+        return err;
+TTF_ERROR:
+        fprintf(stderr, "text_atlas_init: TTF_error: %s\n", SDL_GetError());
+        err = -1;
+        goto DONE;
+SDL_ERROR:
+        fprintf(stderr, "text_atlas_init: SDL_Error: %s\n", SDL_GetError());
+        err = -1;
+        goto DONE;
 }
 
-void dumpMEM(cpu* state, char const* file) {
-        FILE* f = fopen(file, "wb");
-        if (!f) {
-                fprintf(stderr, "Failed to open file in binary mode\n");
-                exit(1);
+void text_atlas_destroy() {
+        for (size_t i = 0; i < 128; ++i) {
+                SDL_DestroyTexture(text_atlas[i]);
         }
-
-        for (uint16_t i = 0x0000; i < 0x4000; ++i) {
-                fprintf(f, "0x%04x 0x%02x\n", i, state->memory[i]);
-        }
-        fclose(f);
 }
 
 void init() {
@@ -69,57 +94,76 @@ void init() {
                 fprintf(stderr, "Failed to init SDL_ttf: %s\n", TTF_GetError());
                 exit(EXIT_FAILURE);
         }
+
+        window = SDL_CreateWindow("Space Invaders Emu", 100, 100, SCREEN_WIDTH,
+                                  SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+        if (!window) {
+                fprintf(stderr, "Failed to create Window: %s\n",
+                        SDL_GetError());
+                exit(EXIT_FAILURE);
+        }
+
+        renderer = SDL_CreateRenderer(
+            window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+        if (!renderer) {
+                fprintf(stderr, "Failed to create renderer: %s\n",
+                        SDL_GetError());
+                exit(EXIT_FAILURE);
+        }
+
+        err = text_atlas_init();
+        if (err) {
+                fprintf(stderr, "Failed to initialize text atlas\n");
+                exit(EXIT_FAILURE);
+        };
 }
 
-void render_text(SDL_Renderer* renderer, char const* s, int ptsize, SDL_Color c,
-                 int x, int y) {
-        TTF_Font* font = 0;
-        SDL_Surface* surfaceMessage = 0;
-        SDL_Texture* message = 0;
+void cleanup() {
+        printf("Cleaning up...\n");
+        ports_delete(pts);
+        cpu_delete(state);
+        text_atlas_destroy();
+        if (renderer) {
+                SDL_DestroyRenderer(renderer);
+        }
+        if (window) {
+                SDL_DestroyWindow(window);
+        }
+        SDL_Quit();
+        TTF_Quit();
+}
 
-        // TODO: should probably use a font atlas instead
-        font = TTF_OpenFont(FONT_FILE, ptsize);
-        if (!font) {
-                goto TTF_ERROR;
+void render_text(SDL_Renderer* renderer, char* s, int x, int y) {
+        if (!s || !renderer) {
+                return;
         }
 
-        surfaceMessage = TTF_RenderText_Solid(font, s, c);
-        if (!surfaceMessage) {
-                goto TTF_ERROR;
-        }
+        SDL_Rect r = {.x = x, .y = y};
+        for (size_t i = 0; s[i] != 0; ++i) {
+                if (s[i] == 0 || i > 127) {
+                        fprintf(stderr,
+                                "render_text: non-ASCII character: %zu\n", i);
+                        continue;
+                }
 
-        message = SDL_CreateTextureFromSurface(renderer, surfaceMessage);
-        if (!message) {
-                goto SDL_ERROR;
-        }
+                SDL_Texture* t = text_atlas[(size_t)s[i]];
 
-        SDL_Rect rect = {.x = x, .y = y};
-        int err = SDL_QueryTexture(message, 0, 0, &rect.w, &rect.h);
-        if (err) {
-                goto SDL_ERROR;
-        }
+                int err = SDL_QueryTexture(t, 0, 0, &r.w, &r.h);
+                if (err) {
+                        fprintf(stderr, "render_text: SDL_Error: %s\n",
+                                SDL_GetError());
+                        continue;
+                }
 
-        err = SDL_RenderCopy(renderer, message, 0, &rect);
-        if (err) {
-                goto SDL_ERROR;
-        }
+                err = SDL_RenderCopy(renderer, t, 0, &r);
+                if (err) {
+                        fprintf(stderr, "render_text: SDL_Error: %s\n",
+                                SDL_GetError());
+                        continue;
+                }
 
-DONE:
-        SDL_FreeSurface(surfaceMessage);
-        SDL_DestroyTexture(message);
-        TTF_CloseFont(font);
-        if (err) {
-                exit(err);
+                r.x += r.w;
         }
-        return;
-TTF_ERROR:
-        fprintf(stderr, "render_text: TTF_error: %s\n", SDL_GetError());
-        err = EXIT_FAILURE;
-        goto DONE;
-SDL_ERROR:
-        fprintf(stderr, "render_text: SDL_Error: %s\n", SDL_GetError());
-        err = EXIT_FAILURE;
-        goto DONE;
 }
 
 void render_grid(SDL_Renderer* renderer) {
@@ -129,20 +173,34 @@ void render_grid(SDL_Renderer* renderer) {
         SDL_RenderDrawLine(renderer, x, 0, x, SCREEN_HEIGHT);
 }
 
+void render_info(SDL_Renderer* renderer) {
+        char buf[128] = "";
+        int x = 20;
+        int y = 20;
+
+        render_text(renderer, "Space Invaders Emulator", x, y);
+        y += 20;
+
+        render_text(renderer, "github.com/dkarella", x, y);
+        y += 40;
+
+        sprintf(buf, "Speed: %.2f", playSpeed);
+        render_text(renderer, buf, x, y);
+}
+
 void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
                       ports const* pts) {
         char buf[128] = "";
         char buf2[128] = "";
-        int ptsize = 12;
         int x = 20;
         int y = 20;
 
         sprintf(buf, "PC: $%04x", state->pc);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "SP: $%02x", state->sp);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         if (disassembleOp(state->pc, state->memory, buf2) == -1) {
@@ -150,97 +208,96 @@ void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
                 exit(EXIT_FAILURE);
         }
         sprintf(buf, "Op: %s", buf2);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         y += 20;
 
-        render_text(renderer, "Registers:", ptsize, color_debugInfo, x, y);
+        render_text(renderer, "Registers:", x, y);
         y += 20;
 
         sprintf(buf, "A: $%02x", state->a);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "B: $%02x", state->b);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "C: $%02x", state->c);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "D: $%02x", state->d);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "E: $%02x", state->e);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "H: $%02x", state->h);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "L: $%02x", state->l);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         y += 20;
 
-        render_text(renderer, "Condition Codes:", ptsize, color_debugInfo, x,
-                    y);
+        render_text(renderer, "Condition Codes:", x, y);
         y += 20;
 
         sprintf(buf, "Z: %d", state->cc.z);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "S: %d", state->cc.s);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "P: %d", state->cc.p);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "CY: %d", state->cc.cy);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "AC: %d", state->cc.ac);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         y += 20;
 
         sprintf(buf, "Interrupts: %d", state->int_enable);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         y += 20;
 
-        render_text(renderer, "Ports:", ptsize, color_debugInfo, x, y);
+        render_text(renderer, "Ports:", x, y);
         y += 20;
 
         sprintf(buf, "Shift: %04x", pts->shift);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "Inp1: %04x", pts->inp1.value);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 
         sprintf(buf, "Inp2: %04x", pts->inp2.value);
-        render_text(renderer, buf, ptsize, color_debugInfo, x, y);
+        render_text(renderer, buf, x, y);
         y += 20;
 }
 
 void render_screen(SDL_Renderer* renderer, cpu const* state) {
-        SDL_Rect static rect = {0};
-        int static scale = 2;
-        int static x_offset = (SCREEN_WIDTH / 4) + 20;
-        int static y_offset = 20;
+        SDL_Rect rect = {0};
+        int scale = 2;
+        int x_offset = (SCREEN_WIDTH / 4) + 20;
+        int y_offset = 20;
 
         SDL_SetRenderDrawColor(renderer, color_fill.r, color_fill.g,
                                color_fill.b, 255);
@@ -262,6 +319,19 @@ void render_screen(SDL_Renderer* renderer, cpu const* state) {
                         }
                 }
         }
+}
+
+void dumpMEM(cpu* state, char const* file) {
+        FILE* f = fopen(file, "wb");
+        if (!f) {
+                fprintf(stderr, "Failed to open file in binary mode\n");
+                exit(1);
+        }
+
+        for (uint16_t i = 0x0000; i < 0x4000; ++i) {
+                fprintf(f, "0x%04x 0x%02x\n", i, state->memory[i]);
+        }
+        fclose(f);
 }
 
 uint8_t tick(cpu* state, ports* pts) {
@@ -292,15 +362,15 @@ uint8_t tick(cpu* state, ports* pts) {
 void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
         switch (key.keysym.sym) {
                 case SDLK_0: {
-                        if (running) {
-                                running = 0;
+                        if (!paused) {
+                                paused = 1;
                         } else {
                                 tick(state, pts);
                         }
                         break;
                 }
                 case SDLK_9: {
-                        running = !running;
+                        paused = !paused;
                         break;
                 }
                 case SDLK_RETURN: {
@@ -355,6 +425,20 @@ void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
                 }
                 case SDLK_r: {
                         dumpMEM(state, "memdump.txt");
+                        break;
+                }
+                case SDLK_PAGEUP: {
+                        playSpeed += .25;
+                        if (playSpeed > 2.0) {
+                                playSpeed = 2.0;
+                        }
+                        break;
+                }
+                case SDLK_PAGEDOWN: {
+                        playSpeed -= .25;
+                        if (playSpeed < .25) {
+                                playSpeed = .25;
+                        }
                         break;
                 }
                 default: {
@@ -423,17 +507,17 @@ void keyup(SDL_KeyboardEvent key, ports* pts) {
 
 size_t ncycles(clock_t lastTick) {
         double elapsed = ((double)(clock() - lastTick)) / CLOCKS_PER_SEC;
-        return elapsed * 2000000;
+        return elapsed * 2000000 * playSpeed;
 }
 
 size_t shouldInterrupt(clock_t lastInterrupt) {
         double elapsed = ((double)(clock() - lastInterrupt)) / CLOCKS_PER_SEC;
-        return state->int_enable && elapsed > (1.0 / 120.0);
+        return state->int_enable && elapsed > (1.0 / (120.0 * playSpeed));
 }
 
 size_t shouldRender(clock_t lastRender) {
         double elapsed = ((double)(clock() - lastRender)) / CLOCKS_PER_SEC;
-        return elapsed > (1.0 / 60.0);
+        return elapsed > (1.0 / (60.0 * playSpeed));
 }
 
 int main(int argc, char* argv[static argc + 1]) {
@@ -505,22 +589,6 @@ int main(int argc, char* argv[static argc + 1]) {
         init();
         atexit(cleanup);
 
-        window = SDL_CreateWindow("Space Invaders Emu", 100, 100, SCREEN_WIDTH,
-                                  SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-        if (!window) {
-                fprintf(stderr, "Failed to create Window: %s\n",
-                        SDL_GetError());
-                return EXIT_FAILURE;
-        }
-
-        renderer = SDL_CreateRenderer(
-            window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-        if (!renderer) {
-                fprintf(stderr, "Failed to create renderer: %s\n",
-                        SDL_GetError());
-                return EXIT_FAILURE;
-        }
-
         SDL_Event e = {0};
         clock_t lastTick = clock();
         clock_t lastInterrupt = clock();
@@ -551,7 +619,7 @@ int main(int argc, char* argv[static argc + 1]) {
                         interrupt = interrupt == 1 ? 2 : 1;
                         lastInterrupt = clock();
                 }
-                if (running) {
+                if (!paused) {
                         size_t n = ncycles(lastTick);
                         while (n) {
                                 size_t cycles = tick(state, pts);
@@ -572,10 +640,10 @@ int main(int argc, char* argv[static argc + 1]) {
 
                         render_grid(renderer);
                         render_screen(renderer, state);
-                        if (running) {
-                                // TODO: render about info and speed-up controls
-                        } else if (!running) {
+                        if (paused) {
                                 render_debugInfo(renderer, state, pts);
+                        } else {
+                                render_info(renderer);
                         }
 
                         SDL_RenderPresent(renderer);

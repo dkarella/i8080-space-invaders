@@ -5,7 +5,7 @@
 
 enum argtype { argtype_none, argtype_d8, argtype_d16, argtype_addr };
 
-typedef struct Opcode {
+typedef struct {
         char const* instruction;
         uint8_t arg;
 } Opcode;
