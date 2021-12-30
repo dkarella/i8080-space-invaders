@@ -28,8 +28,11 @@ ports* pts = 0;
 SDL_Window* window = 0;
 SDL_Renderer* renderer = 0;
 
-SDL_Color const color_grid = {.r = 128, .g = 128, .b = 128};
-SDL_Color const color_fill = {.r = 255, .g = 255, .b = 255};
+SDL_Color const color_grey = {.r = 0xbb, .g = 0xbb, .b = 0xbb};
+SDL_Color const color_white = {.r = 0xff, .g = 0xff, .b = 0xff};
+SDL_Color const color_red = {.r = 0xff, .g = 0x00, .b = 0x00};
+SDL_Color const color_green = {.r = 0x00, .g = 0xff, .b = 0x00};
+SDL_Color const color_cyan = {.r = 0x00, .g = 0xff, .b = 0xff};
 
 SDL_Texture* text_atlas[128] = {0};
 
@@ -47,7 +50,7 @@ int text_atlas_init() {
         for (size_t i = 1; i < 128; ++i) {
                 char const c[] = {i, 0};
 
-                surfaceMessage = TTF_RenderText_Solid(font, c, color_fill);
+                surfaceMessage = TTF_RenderText_Solid(font, c, color_white);
                 if (!surfaceMessage) {
                         goto TTF_ERROR;
                 }
@@ -174,8 +177,8 @@ void render_text(SDL_Renderer* renderer, char* s, int x, int y) {
 }
 
 void render_grid(SDL_Renderer* renderer) {
-        SDL_SetRenderDrawColor(renderer, color_grid.r, color_grid.g,
-                               color_grid.b, 255);
+        SDL_SetRenderDrawColor(renderer, color_grey.r, color_grey.g,
+                               color_grey.b, 255);
         int x = SCREEN_WIDTH / 4;
         SDL_RenderDrawLine(renderer, x, 0, x, SCREEN_HEIGHT);
 }
@@ -300,18 +303,38 @@ void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
         y += 20;
 }
 
+size_t get_screen_section(size_t row) {
+        size_t section_size = 256 / 8;
+        return (row / section_size);
+}
+
+SDL_Color get_section_color(size_t section) {
+        SDL_Color colors[8] = {
+            color_white, color_green, color_grey, color_grey,
+            color_grey,  color_red,   color_cyan, color_white,
+        };
+
+        return colors[section % 8];
+}
+
 void render_screen(SDL_Renderer* renderer, cpu const* state) {
         SDL_Rect rect = {0};
         int scale = 2;
         int x_offset = (SCREEN_WIDTH / 4) + 20;
         int y_offset = 20;
 
-        SDL_SetRenderDrawColor(renderer, color_fill.r, color_fill.g,
-                               color_fill.b, 255);
-
         size_t i = 0;
+        size_t prev_section = -1;
         for (size_t x = 31; x < 32; --x) {
                 for (size_t b = 7; b < 8; --b) {
+                        size_t section = get_screen_section(i / 224);
+                        if (section != prev_section) {
+                                SDL_Color color = get_section_color(section);
+                                SDL_SetRenderDrawColor(renderer, color.r,
+                                                       color.g, color.b, 255);
+                                prev_section = section;
+                        }
+
                         for (size_t y = 0; y < 224; ++y) {
                                 uint8_t d =
                                     cpu_read(state, 32 * y + x + 0x2400);
@@ -436,8 +459,8 @@ void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
                 }
                 case SDLK_PAGEUP: {
                         playSpeed += .25;
-                        if (playSpeed > 2.0) {
-                                playSpeed = 2.0;
+                        if (playSpeed > 4.0) {
+                                playSpeed = 4.0;
                         }
                         break;
                 }
