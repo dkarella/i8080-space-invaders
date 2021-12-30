@@ -684,43 +684,9 @@ int main(int argc, char* argv[static argc + 1]) {
                 fprintf(stderr, "Failed to initialize cpu state\n");
                 return EXIT_FAILURE;
         }
-#ifdef CPUDIAG
-        fread(state->memory + 0x100, fsize, 1, f);
-#else
         fread(state->memory, fsize, 1, f);
-#endif
 
         fclose(f);
-
-#ifdef CPUDIAG
-        // Fix the first instruction to be JMP 0x100
-        state->memory[0] = 0xc3;
-        state->memory[1] = 0x00;
-        state->memory[2] = 0x01;
-
-        // Fix the stack pointer from 0x6ad to 0x7ad
-        // this 0x06 byte 112 in the code, which is
-        // byte 112 + 0x100 = 368 in memory
-        state->memory[368] = 0x7;
-
-        // Skip DAA test
-        state->memory[0x59c] = 0xc3;  // JMP
-        state->memory[0x59d] = 0xc2;
-        state->memory[0x59e] = 0x05;
-
-        FILE* asmf = fopen("cpudag.asm", "wb");
-        for (size_t pc = 0; pc < fsize + 0x100; ++pc) {
-                char s[265] = "";
-                int n = disassembleOp(pc, state->memory, s);
-                if (n == -1) {
-                        printf("failed to disassemble\n");
-                        return EXIT_FAILURE;
-                }
-                fprintf(asmf, "%04zx %s\n", pc, s);
-                pc += n;
-        }
-        fclose(asmf);
-#endif
 
         pts = ports_new();
 

@@ -51,12 +51,10 @@ void cpu_delete(cpu* state) {
 
 void cpu_write(cpu* state, uint16_t addr, uint8_t data) {
         if (addr < 0x2000) {
-#ifndef CPUDIAG
                 // fprintf(stderr, "tried to write to ROM: $%04x #$%02x\n",
                 // addr,
                 //         data);
                 return;
-#endif
         } else if (addr >= 0x4000) {
                 // fprintf(
                 //     stderr,
@@ -162,11 +160,6 @@ void call(cpu* state) {
         uint16_t addr =
             cpu_read(state, state->pc + 1) << 8 | cpu_read(state, state->pc);
 
-#ifdef CPUDIAG
-        if (addr == 0x0689) {
-                fprintf(stderr, "error called at: %04x\n", state->pc - 1);
-        }
-#endif
         cpu_write(state, state->sp - 1, (ret >> 8) & 0xff);
         cpu_write(state, state->sp - 2, (ret & 0xff));
         state->sp -= 2;
@@ -504,13 +497,11 @@ size_t cpu_emulateOp(cpu* state) {
                 {
                         uint16_t hl = (state->h << 8) | state->l;
                         if (hl < 0x2000) {
-#ifndef CPUDIAG
                                 // fprintf(
                                 //     stderr,
                                 //     "tried to write to ROM (INR M): $%04x\n",
                                 //     hl);
                                 break;
-#endif
                         } else if (hl >= 0x4000) {
                                 // fprintf(
                                 //     stderr,
@@ -527,13 +518,11 @@ size_t cpu_emulateOp(cpu* state) {
                 {
                         uint16_t hl = (state->h << 8) | state->l;
                         if (hl < 0x2000) {
-#ifndef CPUDIAG
                                 // fprintf(
                                 //     stderr,
                                 //     "tried to write to ROM (DCR M): $%04x\n",
                                 //     hl);
                                 break;
-#endif
                         } else if (hl >= 0x4000) {
                                 // fprintf(
                                 //     stderr,
@@ -1356,33 +1345,8 @@ size_t cpu_emulateOp(cpu* state) {
                 }
                 case 0xcd:  // CALL addr
                 {
-#ifdef CPUDIAG
-                        uint16_t addr = cpu_read(state, state->pc + 1) << 8 |
-                                        cpu_read(state, state->pc);
-                        if (addr == 0x0005) {
-                                if (state->c == 9) {
-                                        uint16_t offset =
-                                            (state->d << 8) | (state->e);
-                                        char* str =
-                                            (char*)&state
-                                                ->memory[offset +
-                                                         3];  // skip the
-                                                              // prefix bytes
-                                        while (*str != '$')
-                                                printf("%c", *str++);
-                                        printf("\n");
-                                } else if (state->c == 2) {
-                                        printf("print char routine called\n");
-                                        exit(1);
-                                }
-                        } else if (addr == 0x0000) {
-                                exit(0);
-                        } else
-#endif
-                        {
-                                call(state);
-                                break;
-                        }
+                        call(state);
+                        break;
                 }
                 case 0xce:  // ACI d8
                 {

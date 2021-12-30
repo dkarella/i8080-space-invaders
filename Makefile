@@ -36,11 +36,3 @@ clean:
 
 run: main
 	./main res/rom/invaders
-
-cpudiag:
-	$(CC) $(CFLAGS) -DCPUDIAG -c cpu.c -o cpu.o
-	$(CC) $(CFLAGS) -DCPUDIAG -c disassembler.c -o disassembler.o
-	$(CC) $(CFLAGS) -DCPUDIAG -c audio.c -o audio.o
-	$(CC) $(CFLAGS) -DCPUDIAG -c ports.c -o ports.o
-	$(CC) $(CFLAGS) -DCPUDIAG -o main main.c cpu.o disassembler.o audio.o ports.o $(LIBS)
-	./main res/rom/cpudiag.bin
