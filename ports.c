@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "audio.h"
+
 ports* ports_new() {
         ports* pts = malloc(sizeof(ports));
         if (pts) {
@@ -49,9 +51,28 @@ void ports_out(ports* pts, uint8_t port, uint8_t value) {
                         pts->shift_offset = value & 0x7;
                         break;
                 }
-                case 3:  // sound related
+                case 3:  // sounds
                 {
-                        // TODO
+                        static uint8_t prev_port_3 = 0;
+                        static int ufo_channel = 0;
+
+                        if ((value & 0x1) && !(prev_port_3 & 0x1)) {
+                                ufo_channel = audio_loop(SOUND_UFO);
+                        } else if (!(value & 0x1) && (prev_port_3 & 0x1)) {
+                                audio_stop(ufo_channel);
+                        }
+
+                        if ((value & 0x2) && !(prev_port_3 & 0x2)) {
+                                audio_play(SOUND_SHOT);
+                        }
+                        if ((value & 0x4) && !(prev_port_3 & 0x4)) {
+                                audio_play(SOUND_PLAYER_DIE);
+                        }
+                        if ((value & 0x8) && !(prev_port_3 & 0x8)) {
+                                audio_play(SOUND_INVADER_DIE);
+                        }
+
+                        prev_port_3 = value;
                         break;
                 }
                 case 4:  // shift
@@ -59,9 +80,27 @@ void ports_out(ports* pts, uint8_t port, uint8_t value) {
                         pts->shift = (value << 8) | (pts->shift >> 8);
                         break;
                 }
-                case 5:  // sound related
+                case 5:  // more sounds
                 {
-                        // TODO
+                        static uint8_t prev_port_5 = 0;
+
+                        if ((value & 0x1) && !(prev_port_5 & 0x1)) {
+                                audio_play(SOUND_FLEET_MOVEMENT_1);
+                        }
+                        if ((value & 0x2) && !(prev_port_5 & 0x2)) {
+                                audio_play(SOUND_FLEET_MOVEMENT_2);
+                        }
+                        if ((value & 0x4) && !(prev_port_5 & 0x4)) {
+                                audio_play(SOUND_FLEET_MOVEMENT_3);
+                        }
+                        if ((value & 0x8) && !(prev_port_5 & 0x8)) {
+                                audio_play(SOUND_FLEET_MOVEMENT_4);
+                        }
+                        if ((value & 0x10) && !(prev_port_5 & 0x10)) {
+                                audio_play(SOUND_UFO_DIE);
+                        }
+
+                        prev_port_5 = value;
                         break;
                 }
                 case 6:  // coin info displayed in demo screen

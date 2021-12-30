@@ -1,5 +1,6 @@
 .vscode/
 rom/
+sounds/
 notes/
 main
 *.o

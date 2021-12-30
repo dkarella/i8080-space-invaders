@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "audio.h"
 #include "cpu.h"
 #include "disassembler.h"
 #include "ports.h"
@@ -81,18 +82,18 @@ void text_atlas_destroy() {
         }
 }
 
-void init() {
-        int err = SDL_Init(SDL_INIT_VIDEO);
+int init() {
+        int err = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
         if (err) {
                 fprintf(stderr, "Failed init SDL: %s\n", SDL_GetError());
-                exit(EXIT_FAILURE);
+                return -1;
         }
 
         err = TTF_Init();
         if (err) {
                 SDL_Quit();
                 fprintf(stderr, "Failed to init SDL_ttf: %s\n", TTF_GetError());
-                exit(EXIT_FAILURE);
+                return -1;
         }
 
         window = SDL_CreateWindow("Space Invaders Emu", 100, 100, SCREEN_WIDTH,
@@ -100,7 +101,8 @@ void init() {
         if (!window) {
                 fprintf(stderr, "Failed to create Window: %s\n",
                         SDL_GetError());
-                exit(EXIT_FAILURE);
+                return -1;
+                ;
         }
 
         renderer = SDL_CreateRenderer(
@@ -108,14 +110,18 @@ void init() {
         if (!renderer) {
                 fprintf(stderr, "Failed to create renderer: %s\n",
                         SDL_GetError());
-                exit(EXIT_FAILURE);
+                return -1;
         }
 
         err = text_atlas_init();
         if (err) {
                 fprintf(stderr, "Failed to initialize text atlas\n");
-                exit(EXIT_FAILURE);
+                return -1;
         };
+
+        audio_init();
+
+        return 0;
 }
 
 void cleanup() {
@@ -123,6 +129,7 @@ void cleanup() {
         ports_delete(pts);
         cpu_delete(state);
         text_atlas_destroy();
+        audio_quit();
         if (renderer) {
                 SDL_DestroyRenderer(renderer);
         }
@@ -308,7 +315,7 @@ void render_screen(SDL_Renderer* renderer, cpu const* state) {
                         for (size_t y = 0; y < 224; ++y) {
                                 uint8_t d =
                                     cpu_read(state, 32 * y + x + 0x2400);
-                                if ((d >> b) & 0x1) {
+                                if (d & (1 << b)) {
                                         rect.x = (i % 224) * scale + x_offset;
                                         rect.y = (i / 224) * scale + y_offset;
                                         rect.w = scale;
@@ -586,7 +593,9 @@ int main(int argc, char* argv[static argc + 1]) {
 
         pts = ports_new();
 
-        init();
+        if (init()) {
+                return EXIT_FAILURE;
+        }
         atexit(cleanup);
 
         SDL_Event e = {0};
