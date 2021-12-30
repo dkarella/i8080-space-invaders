@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define DIR_PATH "./sounds"
+#define DIR_PATH "./res/sounds"
 #define FREQ 44100
 #define STEREO 2
 #define CHUNK_SIZE 2048

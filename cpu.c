@@ -52,15 +52,16 @@ void cpu_delete(cpu* state) {
 void cpu_write(cpu* state, uint16_t addr, uint8_t data) {
         if (addr < 0x2000) {
 #ifndef CPUDIAG
-                fprintf(stderr, "tried to write to ROM: $%04x #$%02x\n", addr,
-                        data);
+                // fprintf(stderr, "tried to write to ROM: $%04x #$%02x\n",
+                // addr,
+                //         data);
                 return;
 #endif
         } else if (addr >= 0x4000) {
-                fprintf(
-                    stderr,
-                    "tried to write to inaccessible address: $%04x #$%02x\n",
-                    addr, data);
+                // fprintf(
+                //     stderr,
+                //     "tried to write to inaccessible address: $%04x #$%02x\n",
+                //     addr, data);
                 return;
         }
         state->memory[addr] = data;
@@ -68,9 +69,9 @@ void cpu_write(cpu* state, uint16_t addr, uint8_t data) {
 
 uint8_t cpu_read(cpu const* state, uint16_t addr) {
         if (addr >= 0x4000) {
-                fprintf(stderr,
-                        "tried to read from inaccessible address: $%04x\n",
-                        addr);
+                // fprintf(stderr,
+                //         "tried to read from inaccessible address: $%04x\n",
+                //         addr);
                 return 0;
         }
         return state->memory[addr];
@@ -504,19 +505,19 @@ size_t cpu_emulateOp(cpu* state) {
                         uint16_t hl = (state->h << 8) | state->l;
                         if (hl < 0x2000) {
 #ifndef CPUDIAG
-                                fprintf(
-                                    stderr,
-                                    "tried to write to ROM (INR M): $%04x\n",
-                                    hl);
+                                // fprintf(
+                                //     stderr,
+                                //     "tried to write to ROM (INR M): $%04x\n",
+                                //     hl);
                                 break;
 #endif
                         } else if (hl >= 0x4000) {
-                                fprintf(
-                                    stderr,
-                                    "tried to write to inaccessible address "
-                                    "(INR M): "
-                                    "$%04x\n",
-                                    hl);
+                                // fprintf(
+                                //     stderr,
+                                //     "tried to write to inaccessible address "
+                                //     "(INR M): "
+                                //     "$%04x\n",
+                                //     hl);
                                 break;
                         }
                         inr(state, &state->memory[hl]);
@@ -527,19 +528,19 @@ size_t cpu_emulateOp(cpu* state) {
                         uint16_t hl = (state->h << 8) | state->l;
                         if (hl < 0x2000) {
 #ifndef CPUDIAG
-                                fprintf(
-                                    stderr,
-                                    "tried to write to ROM (DCR M): $%04x\n",
-                                    hl);
+                                // fprintf(
+                                //     stderr,
+                                //     "tried to write to ROM (DCR M): $%04x\n",
+                                //     hl);
                                 break;
 #endif
                         } else if (hl >= 0x4000) {
-                                fprintf(
-                                    stderr,
-                                    "tried to write to inaccessible address "
-                                    "(DCR M): "
-                                    "$%04x\n",
-                                    hl);
+                                // fprintf(
+                                //     stderr,
+                                //     "tried to write to inaccessible address "
+                                //     "(DCR M): "
+                                //     "$%04x\n",
+                                //     hl);
                                 break;
                         }
                         dcr(state, &state->memory[hl]);

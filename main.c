@@ -15,7 +15,7 @@
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
 
-#define FONT_FILE "fonts/arkitech/Arkitech Medium.ttf"
+#define FONT_FILE "res/fonts/arkitech/Arkitech Medium.ttf"
 #define FONT_SIZE 12
 
 int quit = 0;
@@ -459,8 +459,8 @@ void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
                 }
                 case SDLK_PAGEUP: {
                         playSpeed += .25;
-                        if (playSpeed > 4.0) {
-                                playSpeed = 4.0;
+                        if (playSpeed > 2.0) {
+                                playSpeed = 2.0;
                         }
                         break;
                 }
@@ -546,9 +546,117 @@ size_t shouldInterrupt(clock_t lastInterrupt) {
 }
 
 size_t shouldRender(clock_t lastRender) {
+#ifdef __EMSCRIPTEN__
+        return 1;
+#endif
         double elapsed = ((double)(clock() - lastRender)) / CLOCKS_PER_SEC;
-        return elapsed > (1.0 / (60.0 * playSpeed));
+        return elapsed > (1.0 / 60.0);
 }
+
+#ifdef __EMSCRIPTEN__
+
+#include <emscripten.h>
+#include <emscripten/html5.h>
+
+static clock_t lastTick;
+static clock_t lastInterrupt;
+static uint8_t interrupt;
+
+void update(void* userData) {
+        SDL_Event e = {0};
+
+        while (SDL_PollEvent(&e)) {
+                switch (e.type) {
+                        case SDL_KEYDOWN: {
+                                keydown(e.key, state, pts);
+                                break;
+                        }
+                        case SDL_KEYUP: {
+                                keyup(e.key, pts);
+                                break;
+                        }
+                        default: {
+                                break;
+                        }
+                }
+        }
+        if (shouldInterrupt(lastInterrupt)) {
+                cpu_interrupt(state, interrupt);
+                interrupt = interrupt == 1 ? 2 : 1;
+                lastInterrupt = clock();
+        }
+        if (!paused) {
+                size_t n = ncycles(lastTick);
+                while (n) {
+                        size_t cycles = tick(state, pts);
+                        if (cycles > n) {
+                                break;
+                        }
+                        n -= cycles;
+                }
+                lastTick = clock();
+        } else {
+                // prevent fast-forwarding
+                lastTick = clock();
+        }
+}
+
+EM_BOOL render() {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        render_grid(renderer);
+        render_screen(renderer, state);
+        if (paused) {
+                render_debugInfo(renderer, state, pts);
+        } else {
+                render_info(renderer);
+        }
+
+        SDL_RenderPresent(renderer);
+        return EM_TRUE;
+}
+
+int wasm_main(char* filename) {
+        FILE* f = fopen(filename, "rb");
+        if (!f) {
+                fprintf(stderr, "Failed to open file in binary mode\n");
+                return EXIT_FAILURE;
+        }
+
+        fseek(f, 0L, SEEK_END);
+        int fsize = ftell(f);
+        fseek(f, 0L, SEEK_SET);
+        if (fsize > CPU_MEM) {
+                fprintf(stderr,
+                        "Provided file too big, wrong file or corrupted?\n");
+                return EXIT_FAILURE;
+        }
+
+        state = cpu_new(CPU_MEM);
+        if (!state) {
+                fprintf(stderr, "Failed to initialize cpu state\n");
+                return EXIT_FAILURE;
+        }
+        fread(state->memory, fsize, 1, f);
+
+        fclose(f);
+        pts = ports_new();
+
+        if (init()) {
+                return EXIT_FAILURE;
+        }
+        atexit(cleanup);
+
+        lastTick = clock();
+        lastInterrupt = clock();
+        interrupt = 1;
+        emscripten_set_interval(update, 4, 0);
+        emscripten_request_animation_frame_loop(render, 0);
+
+        return EXIT_SUCCESS;
+}
+#else
 
 int main(int argc, char* argv[static argc + 1]) {
         if (argc < 2) {
@@ -685,3 +793,4 @@ int main(int argc, char* argv[static argc + 1]) {
 
         return EXIT_SUCCESS;
 }
+#endif

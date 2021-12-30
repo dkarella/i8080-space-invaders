@@ -1,6 +1,7 @@
 .vscode/
-rom/
-sounds/
+res/rom/
+res/sounds/
 notes/
 main
 *.o
+www/main.*
