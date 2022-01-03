@@ -29,4 +29,4 @@ $ ./main invaders
 
 ### Sound (Optional)
 
-In order to play with sound, include the MAME sound files under the `res/sounds/`. Only `0.wav` - `8.wav` are used, and make sure to not rename the sound files.
+In order to play with sound, include the MAME sound files under `res/sounds/`. Only `0.wav` - `8.wav` are used, and make sure to not rename the sound files.
