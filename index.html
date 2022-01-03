@@ -84,7 +84,7 @@
 				const romData = await getROMData();
 				const soundData = await getSoundData();
 
-				await import('/main.mjs')
+				await import(window.location.pathname + 'main.mjs')
 					.then(({ default: instantiate }) => {
 						return instantiate({
 							print: console.log,
