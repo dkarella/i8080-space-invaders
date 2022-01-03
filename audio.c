@@ -11,15 +11,15 @@
 #define CHUNK_SIZE 2048
 
 static char const* const fileNames[NUM_SOUNDS] = {
-    [SOUND_UFO] = "ufo.wav",
-    [SOUND_SHOT] = "shoot.wav",
-    [SOUND_PLAYER_DIE] = "player_die.wav",
-    [SOUND_INVADER_DIE] = "invader_die.wav",
-    [SOUND_FLEET_MOVEMENT_1] = "fleet_movement_1.wav",
-    [SOUND_FLEET_MOVEMENT_2] = "fleet_movement_2.wav",
-    [SOUND_FLEET_MOVEMENT_3] = "fleet_movement_3.wav",
-    [SOUND_FLEET_MOVEMENT_4] = "fleet_movement_4.wav",
-    [SOUND_UFO_DIE] = "ufo_die.wav",
+    [SOUND_UFO] = "0.wav",
+    [SOUND_SHOT] = "1.wav",
+    [SOUND_PLAYER_DIE] = "2.wav",
+    [SOUND_INVADER_DIE] = "3.wav",
+    [SOUND_FLEET_MOVEMENT_1] = "4.wav",
+    [SOUND_FLEET_MOVEMENT_2] = "5.wav",
+    [SOUND_FLEET_MOVEMENT_3] = "6.wav",
+    [SOUND_FLEET_MOVEMENT_4] = "7.wav",
+    [SOUND_UFO_DIE] = "8.wav",
 };
 
 static Mix_Chunk* sounds[NUM_SOUNDS];

@@ -11,20 +11,26 @@
 
 #define CPU_MEM 16384
 
-#define SCREEN_WIDTH 1280
-#define SCREEN_HEIGHT 720
+#define SCREEN_WIDTH 224
+#define SCREEN_HEIGHT 256
+#define SCREEN_SCALE 2
+#define SCREEN_PADDING 40
 
 #define FONT_FILE "res/fonts/arkitech/Arkitech Medium.ttf"
 #define FONT_SIZE 12
 
-static double playSpeed = 1.0;
-static int paused = 0;
+static int const window_width =
+    SCREEN_WIDTH * SCREEN_SCALE + SCREEN_PADDING * 2;
+static int const window_height =
+    SCREEN_HEIGHT * SCREEN_SCALE + SCREEN_PADDING * 2;
 
-static cpu* state = 0;
-static ports* pts = 0;
+static int paused;
 
-static SDL_Window* window = 0;
-static SDL_Renderer* renderer = 0;
+static cpu* state;
+static ports* pts;
+
+static SDL_Window* window;
+static SDL_Renderer* renderer;
 
 static SDL_Color const color_grey = {.r = 0xbb, .g = 0xbb, .b = 0xbb};
 static SDL_Color const color_white = {.r = 0xff, .g = 0xff, .b = 0xff};
@@ -32,7 +38,7 @@ static SDL_Color const color_red = {.r = 0xff, .g = 0x00, .b = 0x00};
 static SDL_Color const color_green = {.r = 0x00, .g = 0xff, .b = 0x00};
 static SDL_Color const color_cyan = {.r = 0x00, .g = 0xff, .b = 0xff};
 
-static SDL_Texture* text_atlas[128] = {0};
+static SDL_Texture* text_atlas[128];
 
 static clock_t lastTick;
 static clock_t lastInterrupt;
@@ -72,135 +78,8 @@ void render_text(SDL_Renderer* renderer, char* s, int x, int y) {
         }
 }
 
-void render_grid(SDL_Renderer* renderer) {
-        SDL_SetRenderDrawColor(renderer, color_grey.r, color_grey.g,
-                               color_grey.b, 255);
-        int x = SCREEN_WIDTH / 4;
-        SDL_RenderDrawLine(renderer, x, 0, x, SCREEN_HEIGHT);
-}
-
-void render_info(SDL_Renderer* renderer) {
-        char buf[128] = "";
-        int x = 20;
-        int y = 20;
-
-        render_text(renderer, "Space Invaders Emulator", x, y);
-        y += 20;
-
-        render_text(renderer, "github.com/dkarella", x, y);
-        y += 40;
-
-        sprintf(buf, "Speed: %.2f", playSpeed);
-        render_text(renderer, buf, x, y);
-}
-
-void render_debugInfo(SDL_Renderer* renderer, cpu const* state,
-                      ports const* pts) {
-        char buf[128] = "";
-        char buf2[128] = "";
-        int x = 20;
-        int y = 20;
-
-        sprintf(buf, "PC: $%04x", state->pc);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "SP: $%02x", state->sp);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        if (disassembleOp(state->pc, state->memory, buf2) == -1) {
-                fprintf(stderr, "render_debugInfo: disassembleOp error\n");
-                exit(EXIT_FAILURE);
-        }
-        sprintf(buf, "Op: %s", buf2);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        y += 20;
-
-        render_text(renderer, "Registers:", x, y);
-        y += 20;
-
-        sprintf(buf, "A: $%02x", state->a);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "B: $%02x", state->b);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "C: $%02x", state->c);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "D: $%02x", state->d);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "E: $%02x", state->e);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "H: $%02x", state->h);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "L: $%02x", state->l);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        y += 20;
-
-        render_text(renderer, "Condition Codes:", x, y);
-        y += 20;
-
-        sprintf(buf, "Z: %d", state->cc.z);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "S: %d", state->cc.s);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "P: %d", state->cc.p);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "CY: %d", state->cc.cy);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "AC: %d", state->cc.ac);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        y += 20;
-
-        sprintf(buf, "Interrupts: %d", state->int_enable);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        y += 20;
-
-        render_text(renderer, "Ports:", x, y);
-        y += 20;
-
-        sprintf(buf, "Shift: %04x", pts->shift);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "Inp1: %04x", pts->inp1.value);
-        render_text(renderer, buf, x, y);
-        y += 20;
-
-        sprintf(buf, "Inp2: %04x", pts->inp2.value);
-        render_text(renderer, buf, x, y);
-        y += 20;
-}
-
 size_t get_screen_section(size_t row) {
-        size_t section_size = 256 / 8;
+        size_t section_size = SCREEN_HEIGHT / 8;
         return (row / section_size);
 }
 
@@ -215,15 +94,14 @@ SDL_Color get_section_color(size_t section) {
 
 void render_screen(SDL_Renderer* renderer, cpu const* state) {
         SDL_Rect rect = {0};
-        int scale = 2;
-        int x_offset = (SCREEN_WIDTH / 4) + 20;
-        int y_offset = 20;
+        int x_offset = SCREEN_PADDING;
+        int y_offset = SCREEN_PADDING;
 
         size_t i = 0;
         size_t prev_section = -1;
         for (size_t x = 31; x < 32; --x) {
                 for (size_t b = 7; b < 8; --b) {
-                        size_t section = get_screen_section(i / 224);
+                        size_t section = get_screen_section(i / SCREEN_WIDTH);
                         if (section != prev_section) {
                                 SDL_Color color = get_section_color(section);
                                 SDL_SetRenderDrawColor(renderer, color.r,
@@ -231,33 +109,24 @@ void render_screen(SDL_Renderer* renderer, cpu const* state) {
                                 prev_section = section;
                         }
 
-                        for (size_t y = 0; y < 224; ++y) {
+                        for (size_t y = 0; y < SCREEN_WIDTH; ++y) {
                                 uint8_t d =
                                     cpu_read(state, 32 * y + x + 0x2400);
                                 if (d & (1 << b)) {
-                                        rect.x = (i % 224) * scale + x_offset;
-                                        rect.y = (i / 224) * scale + y_offset;
-                                        rect.w = scale;
-                                        rect.h = scale;
+                                        rect.x =
+                                            (i % SCREEN_WIDTH) * SCREEN_SCALE +
+                                            x_offset;
+                                        rect.y =
+                                            (i / SCREEN_WIDTH) * SCREEN_SCALE +
+                                            y_offset;
+                                        rect.w = SCREEN_SCALE;
+                                        rect.h = SCREEN_SCALE;
                                         SDL_RenderDrawRect(renderer, &rect);
                                 }
                                 ++i;
                         }
                 }
         }
-}
-
-void dumpMEM(cpu* state, char const* file) {
-        FILE* f = fopen(file, "wb");
-        if (!f) {
-                fprintf(stderr, "Failed to open file in binary mode\n");
-                exit(1);
-        }
-
-        for (uint16_t i = 0x0000; i < 0x4000; ++i) {
-                fprintf(f, "0x%04x 0x%02x\n", i, state->memory[i]);
-        }
-        fclose(f);
 }
 
 uint8_t tick(cpu* state, ports* pts) {
@@ -288,14 +157,6 @@ uint8_t tick(cpu* state, ports* pts) {
 void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
         switch (key.keysym.sym) {
                 case SDLK_0: {
-                        if (!paused) {
-                                paused = 1;
-                        } else {
-                                tick(state, pts);
-                        }
-                        break;
-                }
-                case SDLK_9: {
                         paused = !paused;
                         break;
                 }
@@ -347,24 +208,6 @@ void keydown(SDL_KeyboardEvent key, cpu* state, ports* pts) {
                 }
                 case SDLK_7: {
                         pts->inp2.bits.dip7 = 1;
-                        break;
-                }
-                case SDLK_r: {
-                        dumpMEM(state, "memdump.txt");
-                        break;
-                }
-                case SDLK_PAGEUP: {
-                        playSpeed += .25;
-                        if (playSpeed > 2.0) {
-                                playSpeed = 2.0;
-                        }
-                        break;
-                }
-                case SDLK_PAGEDOWN: {
-                        playSpeed -= .25;
-                        if (playSpeed < .25) {
-                                playSpeed = .25;
-                        }
                         break;
                 }
                 default: {
@@ -432,13 +275,14 @@ void keyup(SDL_KeyboardEvent key, ports* pts) {
 }
 
 size_t ncycles(clock_t lastTick) {
-        double elapsed = ((double)(clock() - lastTick)) / CLOCKS_PER_SEC;
-        return elapsed * 2000000 * playSpeed;
+        float elapsed = ((float)(clock() - lastTick)) / CLOCKS_PER_SEC;
+        return elapsed * 2000000;
 }
 
-size_t shouldInterrupt(clock_t lastInterrupt) {
-        double elapsed = ((double)(clock() - lastInterrupt)) / CLOCKS_PER_SEC;
-        return state->int_enable && elapsed > (1.0 / (120.0 * playSpeed));
+size_t shouldInterrupt(cpu* state, clock_t lastInterrupt) {
+        float elapsed_ms =
+            (((float)(clock() - lastInterrupt)) / CLOCKS_PER_SEC) * 1000;
+        return state->int_enable && elapsed_ms >= 14;
 }
 
 int text_atlas_init() {
@@ -517,13 +361,12 @@ int invaders_init(FILE* f, size_t fsize) {
                 return -1;
         }
 
-        window = SDL_CreateWindow("Space Invaders Emu", 100, 100, SCREEN_WIDTH,
-                                  SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+        window = SDL_CreateWindow("Space Invaders Emu", 100, 100, window_width,
+                                  window_height, SDL_WINDOW_SHOWN);
         if (!window) {
                 fprintf(stderr, "Failed to create Window: %s\n",
                         SDL_GetError());
                 return -1;
-                ;
         }
 
         renderer = SDL_CreateRenderer(
@@ -552,15 +395,7 @@ int invaders_init(FILE* f, size_t fsize) {
 void invaders_render() {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-
-        render_grid(renderer);
         render_screen(renderer, state);
-        if (paused) {
-                render_debugInfo(renderer, state, pts);
-        } else {
-                render_info(renderer);
-        }
-
         SDL_RenderPresent(renderer);
 }
 
@@ -586,7 +421,7 @@ int invaders_update() {
                 }
         }
 
-        if (shouldInterrupt(lastInterrupt)) {
+        if (shouldInterrupt(state, lastInterrupt)) {
                 cpu_interrupt(state, interrupt);
                 interrupt = interrupt == 1 ? 2 : 1;
                 lastInterrupt = clock();
@@ -615,11 +450,11 @@ void invaders_quit() {
         cpu_delete(state);
         text_atlas_destroy();
         audio_quit();
-        if (renderer) {
-                SDL_DestroyRenderer(renderer);
-        }
         if (window) {
                 SDL_DestroyWindow(window);
+        }
+        if (renderer) {
+                SDL_DestroyRenderer(renderer);
         }
         SDL_Quit();
         TTF_Quit();

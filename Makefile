@@ -1,5 +1,5 @@
 CC:=clang
-CFLAGS:=-std=c99 -Wall -Werror -g `sdl2-config --cflags`
+CFLAGS:=-std=c99 -Wall -Werror `sdl2-config --cflags`
 LDFLAGS:=`sdl2-config --libs` -lSDL2_ttf -lSDL2_mixer
 ENTRYPOINT:=main.c
 OUT:=main
