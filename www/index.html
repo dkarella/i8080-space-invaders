@@ -10,7 +10,7 @@
 		html,
 		body {
 			box-sizing: border-box;
-			padding: 20px;
+			padding: 10px 20px;
 			margin: 0;
 			width: 100%;
 			height: 100%;
@@ -19,13 +19,37 @@
 		#welcome>* {
 			margin-bottom: 20px;
 		}
+
+		#welcome>h1 {
+			font-size: 24px;
+			padding: 0;
+		}
+
+		#welcome>p {
+			max-width: 400px;
+			padding: 0;
+		}
+
+		#error {
+			margin-top: 20px;
+			color: red;
+		}
+
+		#source {
+			margin: 20px 0 20px 0;
+		}
 	</style>
 </head>
 
 <body>
 	<div id="welcome">
+		<h1>Hello, welcome to my Space Invaders emulator demo site!</h1>
+		<p>
+			For legal reasons, you need to supply your own ROM file(s) and (optionally) sound files. (Hint:
+			google "space invaders MAME rom").
+		</p>
 		<div>
-			<label for="rom-files">ROM File(s):</label>
+			<label for="rom-files"><span style="color: red;">*</span>ROM File(s):</label>
 			<input type="file" id="rom-files" multiple>
 		</div>
 		<div>
@@ -36,8 +60,11 @@
 	</div>
 	<div id="error" style="display: none; color: red;">Something went wrong :(</div>
 
-	<canvas id="canvas"></canvas>
+	<div id="source">Source Code available at: <a
+			href="https://github.com/dkarella/i8080-space-invaders">https://github.com/dkarella/i8080-space-invaders</a>
+	</div>
 
+	<canvas id="canvas"></canvas>
 	<script type="text/javascript">
 		function getROMData() {
 			return new Promise((resolve, reject) => {

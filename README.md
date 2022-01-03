@@ -2,6 +2,8 @@
 
 Space Invaders Emulator written entirely in C primarily inspired by http://emulator101.com/
 
+You can try it out on the web at: https://dkarella.github.io/i8080-space-invaders/ 
+(Although, for legal reasons, you need to provide your own ROM and sound files.)
 
 ## Depdendencies
 
@@ -24,3 +26,7 @@ $ cat invaders.f >> invaders
 $ cat invaders.e >> invaders
 $ ./main invaders
 ```
+
+### Sound (Optional)
+
+In order to play with sound, include the MAME sound files under the `res/sounds/`. Only `0.wav` - `8.wav` are used, and make sure to not rename the sound files.
