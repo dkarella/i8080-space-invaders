@@ -9,13 +9,12 @@
 #include "ports.h"
 
 #define CPU_MEM 16384
+#define CYCLES_PER_INTERRUPT 16666
 
 #define SCREEN_WIDTH 224
 #define SCREEN_HEIGHT 256
 #define SCREEN_SCALE 2
 #define SCREEN_PADDING 40
-
-#define FONT_SIZE 12
 
 static int const window_width =
     SCREEN_WIDTH * SCREEN_SCALE + SCREEN_PADDING * 2;
@@ -37,7 +36,7 @@ static SDL_Color const color_green = {.r = 0x00, .g = 0xff, .b = 0x00};
 static SDL_Color const color_cyan = {.r = 0x00, .g = 0xff, .b = 0xff};
 
 static clock_t lastTick;
-static clock_t lastInterrupt;
+static size_t cycles_until_interrupt = CYCLES_PER_INTERRUPT;
 
 static uint8_t interrupt = 1;
 
@@ -242,12 +241,6 @@ size_t ncycles(clock_t lastTick) {
         return elapsed * 2000000;
 }
 
-size_t shouldInterrupt(cpu* state, clock_t lastInterrupt) {
-        float elapsed_ms =
-            (((float)(clock() - lastInterrupt)) / CLOCKS_PER_SEC) * 1000;
-        return state->int_enable && elapsed_ms >= 14;
-}
-
 int invaders_init(FILE* f, size_t fsize) {
         if (fsize > CPU_MEM) {
                 fprintf(stderr,
@@ -288,7 +281,6 @@ int invaders_init(FILE* f, size_t fsize) {
 
         audio_init();
         lastTick = clock();
-        lastInterrupt = clock();
 
         return 0;
 }
@@ -322,25 +314,31 @@ int invaders_update() {
                 }
         }
 
-        if (shouldInterrupt(state, lastInterrupt)) {
-                cpu_interrupt(state, interrupt);
-                interrupt = interrupt == 1 ? 2 : 1;
-                lastInterrupt = clock();
-        }
-        if (!paused) {
-                size_t n = ncycles(lastTick);
-                while (n) {
-                        size_t cycles = tick(state, pts);
-                        if (cycles > n) {
-                                break;
-                        }
-                        n -= cycles;
-                }
-                lastTick = clock();
-        } else {
+        if (paused) {
                 // prevent fast-forwarding
                 lastTick = clock();
+                return 0;
         }
+
+        size_t n = ncycles(lastTick);
+        while (n) {
+                size_t cycles = tick(state, pts);
+                if (state->int_enable) {
+                        if (cycles > cycles_until_interrupt) {
+                                cpu_interrupt(state, interrupt);
+                                interrupt = interrupt == 1 ? 2 : 1;
+                                cycles_until_interrupt = CYCLES_PER_INTERRUPT;
+                        } else {
+                                cycles_until_interrupt -= cycles;
+                        }
+                }
+
+                if (cycles > n) {
+                        break;
+                }
+                n -= cycles;
+        }
+        lastTick = clock();
 
         return 0;
 }
