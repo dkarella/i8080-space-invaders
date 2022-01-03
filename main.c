@@ -5,8 +5,13 @@
 #include "invaders.h"
 
 size_t shouldRender(clock_t lastRender) {
-        double elapsed = ((double)(clock() - lastRender)) / CLOCKS_PER_SEC;
-        return elapsed > (1.0 / 60.0);
+        float elapsed = ((float)(clock() - lastRender)) / CLOCKS_PER_SEC;
+        return elapsed > (1.0f / 60.0f);
+}
+
+size_t shouldUpdate(clock_t lastUpdate) {
+        float elapsed = ((float)(clock() - lastUpdate)) / CLOCKS_PER_SEC;
+        return elapsed > (1.0f / 120.0f);
 }
 
 int main(int argc, char* argv[static argc + 1]) {
@@ -33,14 +38,18 @@ int main(int argc, char* argv[static argc + 1]) {
         }
 
         clock_t lastRender = clock();
+        clock_t lastUpdate = clock();
         for (;;) {
-                int quit = invaders_update();
-                if (quit) {
-                        break;
+                if (shouldUpdate(lastUpdate)) {
+                        if (invaders_update()) {
+                                break;
+                        }
+                        lastUpdate = clock();
                 }
 
                 if (shouldRender(lastRender)) {
                         invaders_render();
+                        lastRender = clock();
                 }
         }
 

@@ -10,7 +10,6 @@
 
 void update(void* userData) {
         invaders_update();
-        emscripten_set_timeout(update, 4, userData);
         return;
 }
 
@@ -41,7 +40,7 @@ int start(void) {
                 return EXIT_FAILURE;
         }
 
-        update(0);
+        emscripten_set_interval(update, 16, 0);
         emscripten_request_animation_frame_loop(render, 0);
 
         return EXIT_SUCCESS;
