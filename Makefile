@@ -1,6 +1,6 @@
 CC:=clang
 CFLAGS:=-std=c99 -Wall -Werror `sdl2-config --cflags`
-LDFLAGS:=`sdl2-config --libs` -lSDL2_ttf -lSDL2_mixer
+LDFLAGS:=`sdl2-config --libs` -lSDL2_mixer
 ENTRYPOINT:=main.c
 OUT:=main
 
@@ -13,7 +13,7 @@ web: CC:=emcc
 web: CFLAGS:=-O2
 web: LDFLAGS:=-s EXPORTED_FUNCTIONS="['_start']"
 web: LDFLAGS+=-s EXPORTED_RUNTIME_METHODS=['ccall']
-web: LDFLAGS+=-s USE_SDL=2 -s USE_SDL_MIXER=2 -s USE_SDL_TTF=2
+web: LDFLAGS+=-s USE_SDL=2 -s USE_SDL_MIXER=2
 web: LDFLAGS+=-s MODULARIZE=1
 web: LDFLAGS+= --preload-file res/fonts
 web: ENTRYPOINT:= main_wasm.c 

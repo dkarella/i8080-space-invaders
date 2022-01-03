@@ -1,5 +1,4 @@
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <time.h>
@@ -16,7 +15,6 @@
 #define SCREEN_SCALE 2
 #define SCREEN_PADDING 40
 
-#define FONT_FILE "res/fonts/arkitech/Arkitech Medium.ttf"
 #define FONT_SIZE 12
 
 static int const window_width =
@@ -38,45 +36,10 @@ static SDL_Color const color_red = {.r = 0xff, .g = 0x00, .b = 0x00};
 static SDL_Color const color_green = {.r = 0x00, .g = 0xff, .b = 0x00};
 static SDL_Color const color_cyan = {.r = 0x00, .g = 0xff, .b = 0xff};
 
-static SDL_Texture* text_atlas[128];
-
 static clock_t lastTick;
 static clock_t lastInterrupt;
 
 static uint8_t interrupt = 1;
-
-void render_text(SDL_Renderer* renderer, char* s, int x, int y) {
-        if (!s || !renderer) {
-                return;
-        }
-
-        SDL_Rect r = {.x = x, .y = y};
-        for (size_t i = 0; s[i] != 0; ++i) {
-                if (s[i] == 0 || i > 127) {
-                        fprintf(stderr,
-                                "render_text: non-ASCII character: %zu\n", i);
-                        continue;
-                }
-
-                SDL_Texture* t = text_atlas[(size_t)s[i]];
-
-                int err = SDL_QueryTexture(t, 0, 0, &r.w, &r.h);
-                if (err) {
-                        fprintf(stderr, "render_text: SDL_Error: %s\n",
-                                SDL_GetError());
-                        continue;
-                }
-
-                err = SDL_RenderCopy(renderer, t, 0, &r);
-                if (err) {
-                        fprintf(stderr, "render_text: SDL_Error: %s\n",
-                                SDL_GetError());
-                        continue;
-                }
-
-                r.x += r.w;
-        }
-}
 
 size_t get_screen_section(size_t row) {
         size_t section_size = SCREEN_HEIGHT / 8;
@@ -285,55 +248,6 @@ size_t shouldInterrupt(cpu* state, clock_t lastInterrupt) {
         return state->int_enable && elapsed_ms >= 14;
 }
 
-int text_atlas_init() {
-        TTF_Font* font = 0;
-        SDL_Surface* surfaceMessage = 0;
-        SDL_Texture* texture = 0;
-        int err = 0;
-
-        font = TTF_OpenFont(FONT_FILE, FONT_SIZE);
-        if (!font) {
-                goto TTF_ERROR;
-        }
-
-        for (size_t i = 1; i < 128; ++i) {
-                char const c[] = {i, 0};
-
-                surfaceMessage = TTF_RenderText_Solid(font, c, color_white);
-                if (!surfaceMessage) {
-                        goto TTF_ERROR;
-                }
-
-                texture =
-                    SDL_CreateTextureFromSurface(renderer, surfaceMessage);
-                if (!texture) {
-                        SDL_FreeSurface(surfaceMessage);
-                        goto SDL_ERROR;
-                }
-
-                text_atlas[i] = texture;
-                SDL_FreeSurface(surfaceMessage);
-        }
-
-DONE:
-        TTF_CloseFont(font);
-        return err;
-TTF_ERROR:
-        fprintf(stderr, "text_atlas_init: TTF_error: %s\n", SDL_GetError());
-        err = -1;
-        goto DONE;
-SDL_ERROR:
-        fprintf(stderr, "text_atlas_init: SDL_Error: %s\n", SDL_GetError());
-        err = -1;
-        goto DONE;
-}
-
-void text_atlas_destroy() {
-        for (size_t i = 0; i < 128; ++i) {
-                SDL_DestroyTexture(text_atlas[i]);
-        }
-}
-
 int invaders_init(FILE* f, size_t fsize) {
         if (fsize > CPU_MEM) {
                 fprintf(stderr,
@@ -354,13 +268,6 @@ int invaders_init(FILE* f, size_t fsize) {
                 return -1;
         }
 
-        err = TTF_Init();
-        if (err) {
-                SDL_Quit();
-                fprintf(stderr, "Failed to init SDL_ttf: %s\n", TTF_GetError());
-                return -1;
-        }
-
         window = SDL_CreateWindow("Space Invaders Emu", 100, 100, window_width,
                                   window_height, SDL_WINDOW_SHOWN);
         if (!window) {
@@ -378,12 +285,6 @@ int invaders_init(FILE* f, size_t fsize) {
         }
 
         pts = ports_new();
-
-        err = text_atlas_init();
-        if (err) {
-                fprintf(stderr, "Failed to initialize text atlas\n");
-                return -1;
-        };
 
         audio_init();
         lastTick = clock();
@@ -448,7 +349,6 @@ void invaders_quit() {
         printf("Cleaning up...\n");
         ports_delete(pts);
         cpu_delete(state);
-        text_atlas_destroy();
         audio_quit();
         if (window) {
                 SDL_DestroyWindow(window);
@@ -457,5 +357,4 @@ void invaders_quit() {
                 SDL_DestroyRenderer(renderer);
         }
         SDL_Quit();
-        TTF_Quit();
 }
