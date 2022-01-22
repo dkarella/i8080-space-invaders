@@ -8,8 +8,7 @@ You can try it out on the web at: https://dkarella.github.io/i8080-space-invader
 ## Depdendencies
 
 - C compiler (clang used by default)
-- libsdl2 
-- libsdl2-ttf 
+- libsdl2
 
 NOTE: Theoretically should be cross-platform but has only been tested on Ubuntu running on WSL2. 
 
