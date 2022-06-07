@@ -21,7 +21,7 @@ web: OUT:=./www/main.mjs
 web: main
 
 invaders.o: invaders.c
-	$(CC) $(CFLAGS) -c invaders.c -o invaders.o
+	$(CC) $(CFLAGS) -c invaders.c -o invaders.o $(LDFLAGS)
 
 cpu.o: cpu.c
 	$(CC) $(CFLAGS) -c cpu.c -o cpu.o
