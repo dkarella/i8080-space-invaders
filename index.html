@@ -14,6 +14,13 @@
 			margin: 0;
 			width: 100%;
 			height: 100%;
+			background-color: black;
+			color: white;
+			font-size: 18px;
+		}
+
+		a {
+			color: green;
 		}
 
 		#welcome>* {
@@ -26,8 +33,16 @@
 		}
 
 		#welcome>p {
-			max-width: 400px;
+			max-width: 800px;
 			padding: 0;
+		}
+
+		#emu-container {
+			display: none;
+		}
+
+		#controls {
+			margin-left: 80px;
 		}
 
 		#error {
@@ -64,7 +79,23 @@
 			href="https://github.com/dkarella/i8080-space-invaders">https://github.com/dkarella/i8080-space-invaders</a>
 	</div>
 
-	<canvas id="canvas"></canvas>
+	<div id="emu-container">
+		<canvas id="canvas"></canvas>
+		<div id="controls">
+			<h1>Controls:</h1>
+			<ul>
+				<li>0: pause</li>
+				<li>1: start, one player mode</li>
+				<li>2: start, two player mode</li>
+				<li>Return: add credits</li>
+				<li>Space: shoot</li>
+				<li>Left Arrow: move left</li>
+				<li>Right Arrow: move right</li>
+			</ul>
+		</div>
+	</div>
+
+
 	<script type="text/javascript">
 		function getROMData() {
 			return new Promise((resolve, reject) => {
@@ -102,6 +133,7 @@
 		}
 
 		async function start() {
+			const container = document.getElementById('emu-container');
 			const canvas = document.getElementById('canvas');
 			const welcome = document.getElementById('welcome');
 			const error = document.getElementById('error');
@@ -136,6 +168,7 @@
 							throw new Error('Failed to start wasm module');
 						}
 						welcome.style.display = 'none';
+						container.style.display = 'flex';
 					});
 			} catch (err) {
 				error.style.display = 'block';
